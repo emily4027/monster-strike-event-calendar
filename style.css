@@ -1,0 +1,431 @@
+/* --- 變數 --- */
+:root {
+    --bs-body-font-family: "Noto Sans TC", "Microsoft JhengHei", sans-serif;
+    --bs-body-bg: transparent;
+    --primary-color: #333;
+    --accent: #ef6c00;
+    --accent-light: #fff3e0;
+    --card-bg: rgba(255, 255, 255, 0.95);
+    --card-shadow: 0 8px 20px rgba(0, 0, 0, 0.05);
+    --border-radius: 16px;
+    --grid-line: #e9ecef;
+    --bar-height: 22px;
+
+    /* 標籤顏色 (和抽卡統計表格左側色條相同) */
+    --tag-honke: #dc3545;
+    --tag-collab: #6610f2;
+    --tag-free: #198754;
+    --tag-orb: #ffc107;
+    --tag-none: #6c757d;
+}
+
+/* --- 全域背景 --- */
+body {
+    background: linear-gradient(135deg, #f5f7fa 0%, #c3cfe2 100%);
+    min-height: 100vh;
+    padding-top: 20px;
+    padding-bottom: 100px;
+    color: var(--primary-color);
+    overflow-x: hidden;
+}
+
+.bg-decoration {
+    position: fixed;
+    top: -50%; left: -50%; width: 200%; height: 200%;
+    background: radial-gradient(circle at center, rgba(255, 255, 255, 0.5) 0%, rgba(255, 255, 255, 0) 70%);
+    z-index: -1;
+}
+
+.main-container { max-width: 1200px; }
+
+/* --- Header --- */
+.app-header { margin-bottom: 24px; }
+.app-header h1 {
+    font-weight: 700;
+    font-size: 2.2rem;
+    margin-top: 10px;
+}
+.icon-badge {
+    font-size: 2rem;
+    background: var(--accent);
+    color: white;
+    width: 60px;
+    height: 60px;
+    border-radius: 50%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+}
+
+.cloud-status {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 8px;
+    font-size: 13px;
+    color: #666;
+    margin-bottom: 10px;
+}
+.status-dot {
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background-color: #ccc;
+    display: inline-block;
+    flex-shrink: 0;
+}
+.status-online { background-color: #28a745; box-shadow: 0 0 5px #28a745; }
+.status-offline { background-color: #6c757d; }
+
+#auth-container {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    min-height: 40px;
+}
+#user-info {
+    align-items: center;
+    gap: 10px;
+    background: white;
+    padding: 5px 15px;
+    border-radius: 25px;
+    box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
+}
+.auth-btn.login {
+    border: none;
+    background-color: white;
+    color: #333;
+    font-weight: 600;
+    padding: 8px 20px;
+    border-radius: 25px;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.1);
+    transition: all 0.2s;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+}
+.auth-btn.login:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
+}
+
+/* --- 卡片 --- */
+.section-card {
+    background-color: var(--card-bg);
+    border-radius: var(--border-radius);
+    box-shadow: var(--card-shadow);
+    padding: 20px;
+    border: 1px solid rgba(0, 0, 0, 0.05);
+}
+
+/* --- 工具列 --- */
+.calendar-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 12px;
+}
+.month-nav {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+}
+.month-title {
+    font-size: 1.4rem;
+    font-weight: 700;
+    color: var(--accent);
+    margin: 0 4px;
+    min-width: 8.5em;
+    text-align: center;
+}
+.toolbar-filters { min-width: 140px; }
+
+.tag-legend {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 6px 14px;
+    font-size: 0.85rem;
+    color: #555;
+    margin-bottom: 12px;
+}
+.legend-item { display: inline-flex; align-items: center; gap: 5px; }
+.legend-dot { width: 12px; height: 12px; border-radius: 3px; display: inline-block; }
+.records-source { margin-left: auto; color: #888; }
+
+/* --- 標籤顏色 --- */
+.tag-honke { background-color: var(--tag-honke); color: #fff; }
+.tag-collab { background-color: var(--tag-collab); color: #fff; }
+.tag-free { background-color: var(--tag-free); color: #fff; }
+.tag-orb { background-color: var(--tag-orb); color: #333; }
+.tag-none { background-color: var(--tag-none); color: #fff; }
+
+/* --- 月曆格 (桌機) --- */
+.calendar-grid {
+    border: 1px solid var(--grid-line);
+    border-radius: 12px;
+    overflow: hidden;
+    background: #fff;
+}
+.weekday-row {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    background: var(--accent-light);
+    font-weight: 600;
+    font-size: 0.85rem;
+    text-align: center;
+}
+.weekday-row div { padding: 6px 0; }
+.weekday-row div:first-child, .weekday-row div:last-child { color: var(--accent); }
+
+.calendar-week {
+    display: grid;
+    grid-template-columns: repeat(7, minmax(0, 1fr));
+    min-height: 112px;
+    border-top: 1px solid var(--grid-line);
+    padding-bottom: 6px;
+}
+.day-cell {
+    grid-row: 1 / -1;
+    border-right: 1px solid var(--grid-line);
+    margin-bottom: -6px;   /* 蓋住 week 的 padding-bottom，格線才會到底 */
+}
+.day-cell:nth-child(14n + 13) { border-right: none; }   /* 每週第 7 格 (每天兩個元素：格子 + 日期) */
+.day-cell.other-month { background: #fafafa; }
+.day-cell.today { background: var(--accent-light); }
+
+.day-number {
+    grid-row: 1;
+    font-size: 0.8rem;
+    padding: 4px 8px 2px;
+    color: #555;
+    z-index: 1;
+}
+.day-number.today {
+    color: var(--accent);
+    font-weight: 700;
+}
+.calendar-week .day-cell.other-month + .day-number { color: #bbb; }
+
+.event-bar {
+    z-index: 2;
+    height: var(--bar-height);
+    margin: 1px 3px;
+    padding: 0 6px;
+    border: none;
+    border-radius: 5px;
+    font-size: 0.75rem;
+    line-height: var(--bar-height);
+    text-align: left;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    min-width: 0;
+    cursor: pointer;
+    transition: filter 0.15s;
+}
+.event-bar:hover, .event-bar:focus-visible { filter: brightness(1.12); }
+.event-bar:focus-visible { outline: 2px solid #333; outline-offset: 1px; }
+.event-bar.continues-before { border-top-left-radius: 0; border-bottom-left-radius: 0; margin-left: 0; }
+.event-bar.continues-after { border-top-right-radius: 0; border-bottom-right-radius: 0; margin-right: 0; }
+/* 只有開始日的活動：淺色底、左側色條，和有期間的長條區分 */
+.event-bar.single-day {
+    background-color: #fff;
+    color: #333;
+    border-left: 4px solid var(--tag-none);
+    box-shadow: inset 0 0 0 1px var(--grid-line);
+}
+.event-bar.single-day.tag-honke { border-left-color: var(--tag-honke); }
+.event-bar.single-day.tag-collab { border-left-color: var(--tag-collab); }
+.event-bar.single-day.tag-free { border-left-color: var(--tag-free); }
+.event-bar.single-day.tag-orb { border-left-color: var(--tag-orb); }
+
+/* --- 清單 (手機) --- */
+.event-list {
+    display: none;
+    list-style: none;
+    padding: 0;
+    margin: 0;
+}
+.event-list li + li { margin-top: 8px; }
+.event-list-item {
+    width: 100%;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    text-align: left;
+    background: #fff !important;
+    color: var(--primary-color) !important;
+    border: 1px solid var(--grid-line);
+    border-left: 6px solid var(--tag-none);
+    border-radius: 10px;
+    padding: 10px 12px;
+}
+.event-list-item.tag-honke { border-left-color: var(--tag-honke); }
+.event-list-item.tag-collab { border-left-color: var(--tag-collab); }
+.event-list-item.tag-free { border-left-color: var(--tag-free); }
+.event-list-item.tag-orb { border-left-color: var(--tag-orb); }
+.event-list-main { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.event-list-name { font-weight: 600; overflow-wrap: anywhere; }
+.event-list-meta { font-size: 0.8rem; color: #777; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.event-list-pulls { font-weight: 700; color: var(--accent); white-space: nowrap; }
+.badge-ongoing {
+    background: var(--accent);
+    color: #fff;
+    border-radius: 10px;
+    padding: 0 7px;
+    font-size: 0.7rem;
+}
+.event-list-empty { color: #888; text-align: center; padding: 24px 0; }
+
+@media (max-width: 767.98px) {
+    .app-header h1 { font-size: 1.6rem; }
+    .section-card { padding: 14px; }
+    .calendar-grid { display: none; }
+    .event-list { display: block; }
+    .calendar-toolbar { justify-content: center; }
+    .month-title { min-width: 0; font-size: 1.2rem; }
+    .toolbar-filters { width: 100%; }
+    .records-source { margin-left: 0; width: 100%; }
+}
+
+/* --- 活動詳細 --- */
+.modal-content {
+    background-color: #fff !important;
+    color: #333 !important;
+    box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+    border: none;
+}
+.event-info {
+    display: grid;
+    grid-template-columns: auto 1fr;
+    gap: 6px 14px;
+    margin: 0;
+}
+.event-info dt { font-weight: 600; color: #666; }
+.event-info dd { margin: 0; overflow-wrap: anywhere; }
+.tag-chip { border-radius: 10px; padding: 1px 10px; font-size: 0.85rem; }
+.pulls-table .notes-cell { overflow-wrap: anywhere; }
+.pulls-table .total-row td { font-weight: 700; border-bottom: none; }
+
+/* --- 懸浮工具箱菜單 (和其他工具相同) --- */
+.toolbox-menu-wrapper {
+    position: fixed;
+    bottom: 30px;
+    right: 30px;
+    z-index: 1040;
+    font-family: var(--bs-body-font-family);
+    display: flex;
+    flex-direction: column;
+    align-items: flex-end;
+    cursor: default;
+}
+.toolbox-main-btn {
+    background: #2c3e50;
+    color: white;
+    padding: 12px 24px;
+    border-radius: 50px;
+    font-weight: 700;
+    box-shadow: 0 10px 20px rgba(0, 0, 0, 0.2);
+    transition: all 0.3s;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    white-space: nowrap;
+    border: 2px solid rgba(255, 255, 255, 0.5);
+    cursor: pointer;
+    margin: 0;
+    font-family: inherit;
+    font-size: 1rem;
+    appearance: none;
+}
+.toolbox-main-btn:hover { background: #1f2a36; }
+.toolbox-items-list {
+    display: flex;
+    flex-direction: column;
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.4s ease-in-out, margin-bottom 0.4s ease-in-out;
+    background: white;
+    border-radius: 12px;
+    box-shadow: 0 4px 8px rgba(0, 0, 0, 0.1);
+    min-width: 100%;
+    margin-bottom: 0;
+}
+.toolbox-menu-wrapper:hover .toolbox-items-list,
+.toolbox-menu-wrapper:focus-within .toolbox-items-list {
+    max-height: 300px;
+    margin-bottom: 8px;
+}
+.toolbox-item {
+    padding: 10px 15px;
+    text-decoration: none;
+    color: var(--primary-color);
+    font-size: 0.95rem;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    white-space: nowrap;
+    transition: background-color 0.2s;
+    border-bottom: 1px solid rgba(0, 0, 0, 0.05);
+    width: 100%;
+}
+.toolbox-item:hover { background-color: var(--accent-light); color: var(--accent); }
+.toolbox-item:first-child { border-top-left-radius: 12px; border-top-right-radius: 12px; }
+.toolbox-item:last-child { border-bottom: none; }
+.toolbox-item.active { background-color: var(--accent); color: white; font-weight: 700; }
+.toolbox-item.active:hover { background-color: #d45f00; color: white; }
+
+/* --- Toast --- */
+#toast-message {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 10000;
+    padding: 12px 20px;
+    color: white;
+    border-radius: 12px;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.4s ease-in-out, transform 0.4s ease-in-out, visibility 0.4s;
+    font-size: 0.95rem;
+    font-weight: 500;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.2);
+    max-width: calc(100% - 40px);
+    transform: translateX(110%);
+}
+#toast-message.show { opacity: 1; visibility: visible; transform: translateX(0); }
+
+/* --- GitHub 連結 (左下角) --- */
+.github-project-link {
+    position: fixed;
+    bottom: 30px;
+    left: 30px;
+    z-index: 1040;
+    background-color: #333;
+    color: white;
+    padding: 10px 20px;
+    border-radius: 25px;
+    text-decoration: none;
+    font-weight: 600;
+    font-size: 0.9rem;
+    box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
+    transition: all 0.3s;
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    border: 1px solid rgba(255, 255, 255, 0.2);
+}
+.github-project-link:hover {
+    background-color: #000;
+    transform: translateY(-2px);
+    color: white;
+}
+
+@media (max-width: 767.98px) {
+    .toolbox-menu-wrapper { bottom: 16px; right: 16px; }
+    .github-project-link { bottom: 16px; left: 16px; }
+}

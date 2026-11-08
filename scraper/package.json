@@ -1,0 +1,15 @@
+{
+  "name": "monster-strike-event-calendar-scraper",
+  "private": true,
+  "description": "每天抓怪物彈珠官網的轉蛋公告，新增到 Firestore 活動清單",
+  "scripts": {
+    "scrape": "node scrape.js",
+    "dry-run": "node scrape.js --dry-run"
+  },
+  "engines": {
+    "node": ">=22"
+  },
+  "dependencies": {
+    "firebase-admin": "14.5.0"
+  }
+}

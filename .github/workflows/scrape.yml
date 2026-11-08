@@ -1,0 +1,51 @@
+# 每天台灣時間中午 12:00 (UTC 04:00) 抓官網的轉蛋公告，新增到 Firestore 的活動清單 shared/events。
+# GitHub 的排程常會晚幾分鐘到幾十分鐘才執行。也可以在 Actions 頁面手動執行 (Run workflow)。
+# 需要 repo secret：FIREBASE_SERVICE_ACCOUNT (Firebase service account 金鑰 JSON 全文)
+name: 抓取轉蛋公告
+
+on:
+  schedule:
+    - cron: '0 4 * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: write   # commit scraper/log.md、scraper/seen.json
+
+concurrency:
+  group: scrape
+  cancel-in-progress: false
+
+jobs:
+  scrape:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: scraper/package-lock.json
+
+      - name: 安裝套件
+        working-directory: scraper
+        run: npm ci --no-audit --no-fund
+
+      - name: 抓取並新增活動
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: node scraper/scrape.js
+
+      # 有新增活動時 commit 紀錄檔 (也讓 repo 保持有動靜，排程才不會因 60 天沒活動被停用)
+      - name: Commit 紀錄
+        run: |
+          git add scraper/log.md scraper/seen.json
+          if git diff --staged --quiet; then
+            echo "沒有變動"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "爬蟲：更新活動清單紀錄 ($(TZ=Asia/Taipei date +%F))"
+          git push
