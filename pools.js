@@ -82,7 +82,7 @@
 
     // 角色名稱 → 它所在的限定卡池 (不在名單上回傳空字串)
     //   先看預設版本 (官網限定角色名單，每隻角色只屬於一個卡池)；
-    //   預設版本沒有的角色 (之後才登場) 再看各期版本：最早的月份優先，同時出現時名單短的優先。
+    //   預設版本沒有的角色 (之後才登場) 再看各期版本：常設祭典 (有預設版本) 優先，再來是最早的月份、名單短的。
     //   各期版本是「那期轉蛋抽得到的角色」，可能包含其他祭典的限定角色，所以不能先看
     function buildLimitedLookup(pools) {
         const byKey = new Map();
@@ -92,8 +92,11 @@
             if (key && !byKey.has(key)) byKey.set(key, p.pool);
         });
         limited.filter((p) => p.months.length === 0).forEach(add);
+        // 有預設版本的常設祭典優先 (新祭典的名單常混著別的祭典的角色)，再來是最早的月份、名單短的
+        const regular = new Set(limited.filter((p) => p.months.length === 0).map((p) => p.pool));
         limited.filter((p) => p.months.length > 0)
-            .sort((a, b) => a.months[0].localeCompare(b.months[0]) || a.chars.length - b.chars.length)
+            .sort((a, b) => (regular.has(b.pool) - regular.has(a.pool))
+                || a.months[0].localeCompare(b.months[0]) || a.chars.length - b.chars.length)
             .forEach(add);
         return (name) => byKey.get(poolKey(name)) || '';
     }

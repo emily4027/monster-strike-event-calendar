@@ -37,7 +37,7 @@ test('活動 → 卡池：抽卡統計實際的活動名稱', () => {
     assert.deepEqual(namesFor('2026-07月 怪物彈珠世代2019〜所羅門篇〜'), ['怪物彈珠世代 2019']);
     assert.deepEqual(namesFor('2023-10月 週年2016世代池'), ['怪物彈珠世代 2016']);
     assert.deepEqual(namesFor('2024-09月 怪物彈珠世代 2013＆2014＆2017 (烏列爾、諾斯特拉達姆斯)'),
-        ['怪物彈珠世代 2013＆2014', '怪物彈珠世代 2017']);
+        ['怪物彈珠世代 2013＆2014', '怪物彈珠世代 2017', '怪物彈珠世代 2013＆2014＆2017']);
     assert.deepEqual(namesFor('2025-06月 綠色幻想×MIDNIGHT PARTY×藥師少女的獨語'), ['藥師少女的獨語', '綠色幻想', 'Midnight Party']);
     assert.deepEqual(namesFor('2026-11月 藍色監獄'), ['藍色監獄']);
     assert.deepEqual(namesFor('2026-03月 可用特玉抽！全明星大集合感謝轉蛋'), []);
