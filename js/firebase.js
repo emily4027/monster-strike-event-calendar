@@ -1,5 +1,5 @@
 // =====================================================
-// Firebase 初始化 (兩個頁面共用，<script type="module" src="firebase.js">)
+// Firebase 初始化 (兩個頁面共用，<script type="module" src="js/firebase.js">)
 // 和其他工具同一個專案 ms-toolbox-web。其他程式透過 window.firebaseFns 使用 SDK 的函式。
 //
 // 寫入：只有「角色」頁的管理員名稱修正 (shared/characters) 會用到 runTransaction。

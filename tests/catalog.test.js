@@ -6,7 +6,7 @@ const {
     parseGachaCharacters, stripTag, baseNameOf, buildAliasMap, listAccounts,
     buildCatalog, sortCatalog, filterByQuery, differsByOneCjk, findSimilarNames,
     poolOf, charactersInNotes
-} = require('../catalog.js');
+} = require('../js/catalog.js');
 
 const rec = (over) => ({ id: 'r' + Math.random(), date: '2026-01-01', event: '活動A', account: '羽入', pulls: 10, notes: '', tag: 'collab', ...over });
 

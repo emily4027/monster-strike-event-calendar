@@ -11,7 +11,7 @@
 'use strict';
 
 const { poolKey, readPools, poolsForEvent, eventMonth } = require('../pools.js');
-const { differsByOneCjk } = require('../catalog.js');
+const { differsByOneCjk } = require('../js/catalog.js');
 
 // ---- HTML 小工具 ----
 const ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', '#39': "'" };

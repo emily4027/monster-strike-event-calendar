@@ -1,6 +1,6 @@
 // =====================================================
 // 角色頁的資料計算 (純函式，不碰 DOM 與 Firebase)；行事曆的「這期卡池」也用 charactersInNotes
-// 瀏覽器：window.Catalog；Node (測試)：require('./catalog.js')
+// 瀏覽器：window.Catalog；Node (測試)：require('./js/catalog.js')
 //
 // 這裡只「讀」抽卡統計的紀錄，絕對不寫入。
 // 解析規則必須和果實分配一致 (monster-strike-fruit-assign/script.js 的

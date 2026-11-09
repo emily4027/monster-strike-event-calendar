@@ -1,7 +1,7 @@
 // 執行：node --test tests/
 const test = require('node:test');
 const assert = require('node:assert/strict');
-const C = require('../calendar.js');
+const C = require('../js/calendar.js');
 
 test('日期：驗證與加減', () => {
     assert.ok(C.isValidDate('2026-02-28'));

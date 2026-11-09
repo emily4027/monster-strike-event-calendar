@@ -125,14 +125,25 @@ node apply-pools.js pool-items.json pool-report.md   # 會改 pools.json，看�
 
 純靜態 HTML + CSS + Vanilla JS，沒有建置工具。
 
+```
+.
+├── index.html / characters.html   # 📅 行事曆、📖 角色 (兩個頁面)
+├── pools.js / pools.json          # 卡池 (抽卡統計也從這裡載入，不要搬動)
+├── js/                            # 網頁的程式
+├── css/                           # 網頁的樣式
+├── scraper/                       # 爬蟲 (GitHub Actions 每天執行)
+├── tests/                         # 自動化測試
+└── .github/workflows/scrape.yml   # 爬蟲的排程
+```
+
 | 檔案 | 內容 |
 |------|------|
-| `index.html`、`script.js`、`calendar.js` | 📅 行事曆。`calendar.js` 是日期計算、月曆排版、抽數彙總的純函式（`window.CalendarCore`） |
-| `characters.html`、`characters.js`、`characters.css`、`catalog.js` | 📖 角色。`catalog.js` 是角色總覽的純函式（`window.Catalog`） |
-| `firebase.js` | Firebase 初始化（兩頁共用） |
-| `common.js` | 兩頁共用：讀取資料、登入、管理員判斷、懸浮工具箱（`window.Shared`） |
-| `style.css` | 兩頁共用的樣式和行事曆的樣式 |
-| `pools.js`、`pools.json` | 卡池與名稱修正的純函式（`window.CharacterPools`）和卡池資料。**抽卡統計也載入這兩個檔案** |
+| `index.html`、`js/calendar-page.js`、`js/calendar.js` | 📅 行事曆。`calendar.js` 是日期計算、月曆排版、抽數彙總的純函式（`window.CalendarCore`） |
+| `characters.html`、`js/characters-page.js`、`css/characters.css`、`js/catalog.js` | 📖 角色。`catalog.js` 是角色總覽的純函式（`window.Catalog`） |
+| `js/firebase.js` | Firebase 初始化（兩頁共用） |
+| `js/common.js` | 兩頁共用：讀取資料、登入、管理員判斷、懸浮工具箱（`window.Shared`） |
+| `css/style.css` | 兩頁共用的樣式和行事曆的樣式 |
+| `pools.js`、`pools.json` | 卡池與名稱修正的純函式（`window.CharacterPools`）和卡池資料。**抽卡統計從這個網址載入這兩個檔案，所以放在最外層，不要搬動** |
 | `scraper/parse.js`、`scraper/scrape.js` | 爬蟲：公告解析與活動清單合併、主程式 |
 | `scraper/pool-parse.js`、`scraper/apply-pools.js`、`scraper/pool-pr.sh`、`scraper/backfill.js` | 爬蟲的卡池部分：公告 → 卡池變動、套用到 `pools.json`、開 PR、歷史回補 |
 | `tests/` | 自動化測試 |
