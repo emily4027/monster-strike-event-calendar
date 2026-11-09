@@ -156,7 +156,11 @@ async function main() {
     console.log(`對應到 ${items.length} 場活動，對不上 ${flags.length} 場；存到 ${out}`);
 }
 
-main().catch((error) => {
-    console.error(error);
-    process.exit(1);
-});
+if (require.main === module) {
+    main().catch((error) => {
+        console.error(error);
+        process.exit(1);
+    });
+}
+
+module.exports = { fromFirestore };

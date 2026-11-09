@@ -2,7 +2,8 @@
 #   1. 新的轉蛋活動加進 Firestore 的活動清單 shared/events (直接寫入，只新增不覆蓋)
 #   2. 公告裡的卡池角色整理成 pools.json 的變動，開 PR 給管理員確認 (分支 pools-update)
 # GitHub 的排程常會晚幾分鐘到幾十分鐘才執行。也可以在 Actions 頁面手動執行 (Run workflow)，
-# 手動執行時勾選「歷史卡池回補」會改成從官網公告列表往回翻，補齊過去各期的卡池 (只開 PR，不改活動清單)。
+# 手動執行時勾選「歷史卡池回補」會改成從官網公告列表往回翻，補齊過去各期的卡池 (只開 PR，不改活動清單)；
+# 勾選「補上舊活動的公告連結」會把 scraper/fill-events.json 的結束日與公告連結補進活動清單 (一次性，只補空的欄位)。
 #
 # 需要：
 #   - repo secret：FIREBASE_SERVICE_ACCOUNT (Firebase service account 金鑰 JSON 全文)
@@ -22,6 +23,10 @@ on:
         description: '回補的起始日 (YYYY-MM-DD)'
         type: string
         default: '2023-09-01'
+      fill_events:
+        description: '補上舊活動的公告連結與結束日 (scraper/fill-events.json，只補空的欄位)'
+        type: boolean
+        default: false
 
 permissions:
   contents: write        # commit scraper/log.md、scraper/seen.json；推 pools-update 分支
@@ -34,7 +39,7 @@ concurrency:
 
 jobs:
   scrape:
-    if: ${{ !inputs.backfill }}
+    if: ${{ !inputs.backfill && !inputs.fill_events }}
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
@@ -91,3 +96,25 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: bash scraper/pool-pr.sh "$RUNNER_TEMP/pool-items.json" "卡池回補：${{ inputs.since }} 起的歷史公告"
+
+  fill-events:
+    if: ${{ inputs.fill_events && !inputs.backfill }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+          cache-dependency-path: scraper/package-lock.json
+
+      - name: 安裝套件
+        working-directory: scraper
+        run: npm ci --no-audit --no-fund
+
+      - name: 補上公告連結與結束日
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+        run: node scraper/fill-events.js
