@@ -3,14 +3,14 @@
 // 規則 (使用者確認過)：
 //   - 祭典等本家轉蛋：公告表格「「X」限定角色」「轉出對象限定角色」「轉出對象期間限定角色」下面的角色都算這期卡池
 //   - 合作活動：標題有「轉蛋「…」」的段落裡的角色表，只收稀有度「★6（獸神化前）」的角色
-//   - 卡池依每期公告各自一個版本：限定卡池加一個 since = 活動年月的版本 (不改舊版本)；
-//     名單和這期原本會用的版本一樣時不加。同一個月已經有不同名單的版本時不寫，只標出來
+//   - 卡池依每期公告各自一個版本：限定卡池的版本記下它是哪幾個月 (months)，活動只用自己那個月的版本。
+//     名單和某一期相同時把月份加進那個版本；同一個月已經有不同名單的版本時不寫，只標出來
 //   - 合作卡池依「年-月月+作品名」對應單一期活動，名單不同時直接改那一筆
 //   - 名稱和既有角色相似但不同 (只差一個中文字) 時標出來，不自己判斷成同一隻
 //   - 解析不確定 (格式不同、找不到★6、名單黏在一起拆不開、段落不只一個) 時只標出來，不寫入
 'use strict';
 
-const { poolKey, readPools, poolsForEvent, eventMonth } = require('../pools.js');
+const { poolKey, readPools, matchingPools, poolsForEvent, eventMonth } = require('../pools.js');
 const { differsByOneCjk } = require('../js/catalog.js');
 
 // ---- HTML 小工具 ----
@@ -173,6 +173,10 @@ const diffNames = (next, prev) => ({
 });
 
 // ---- 寫回 pools.json ----
+// pools.json 一筆卡池的月份 (舊格式的 since 當成一個月)
+const rawMonths = (p) => (Array.isArray(p.months) ? p.months : (typeof p.since === 'string' && p.since ? [p.since] : []));
+const maxMonth = (p) => rawMonths(p).slice().sort().pop() || '';
+
 const monthOfMatch = (entry) => {
     const m = (entry.match || []).map((x) => String(x).match(/^(\d{4}-\d{2})月/)).find(Boolean);
     return m ? m[1] : '';
@@ -188,18 +192,13 @@ function insertEntry(list, entry) {
         next.splice(at === -1 ? lastCollab + 1 : at, 0, entry);
         return next;
     }
-    // 限定卡池的新版本接在同名卡池的最後一個版本後面 (同名卡池依 since 排序)
+    // 限定卡池的新版本接在同名卡池裡月份比它早的最後一個版本後面 (同名卡池依月份排序，預設版本在最前面)
     const same = next.map((p, i) => [p, i]).filter(([p]) => p.pool === entry.pool && p.kind === entry.kind);
     if (same.length === 0) return [...next, entry];
-    const after = same.filter(([p]) => !p.since || p.since < entry.since).pop();
+    const first = rawMonths(entry)[0];
+    const after = same.filter(([p]) => rawMonths(p).length === 0 || rawMonths(p)[0] < first).pop();
     next.splice(after ? after[1] + 1 : same[0][1], 0, entry);
     return next;
-}
-
-// 同名卡池的版本中，這個月要用的版本 (和 pools.js 的 pickVersion 相同規則)
-function versionFor(versions, month) {
-    const usable = versions.filter((v) => v.since && v.since <= month).sort((a, b) => (a.since < b.since ? 1 : -1));
-    return usable[0] || versions.find((v) => !v.since) || null;
 }
 
 // 一期活動 → 卡池的變動。回傳 { data, change, flags }，data 是套用後的 pools.json 內容
@@ -261,7 +260,7 @@ function planOne(poolsData, item) {
         });
     }
 
-    // 本家 (祭典等)：限定角色表
+    // 本家 (祭典等)：限定角色表。每期一個版本，只用在自己那個月 (pools.js 的 poolsForEvent)
     if (data.limited.length === 0) return none;
     if (!month) {
         flag('活動名稱沒有年月，無法決定卡池版本，需要手動處理');
@@ -269,40 +268,59 @@ function planOne(poolsData, item) {
     }
     const { names, notes } = cleanNames(data.limited.flatMap((l) => l.names), known);
     const withNotes = (result) => { if (result.change) notes.forEach(flag); return result; };
-    let current = poolsForEvent(parsed, event.event).filter((p) => p.kind === 'limited');
-    if (current.length === 0) {
+    let poolNames = [...new Set(matchingPools(parsed, event.event).filter((p) => p.kind === 'limited').map((p) => p.pool))];
+    if (poolNames.length === 0) {
         // 活動名稱對不到時，用表頭「「X」限定角色」的 X 找同名卡池
         const header = data.limited.map((l) => l.poolName).find(Boolean);
-        const versions = header ? parsed.filter((p) => p.kind === 'limited' && poolKey(p.pool) === poolKey(header)) : [];
-        const picked = versionFor(versions, month);
-        if (picked) current = [picked];
+        const byHeader = header ? parsed.find((p) => p.kind === 'limited' && poolKey(p.pool) === poolKey(header)) : null;
+        if (byHeader) poolNames = [byHeader.pool];
     }
-    if (current.length > 1) {
-        flag(`活動名稱對到好幾個限定卡池（${current.map((p) => p.pool).join('、')}），需要手動處理`);
+    if (poolNames.length > 1) {
+        flag(`活動名稱對到好幾個限定卡池（${poolNames.join('、')}），需要手動處理`);
         return none;
     }
-    if (current.length === 0) {
+    if (poolNames.length === 0) {
         const name = data.limited.map((l) => l.poolName).find(Boolean) || event.event.replace(/^\d{4}-\d{2}月\s*/, '');
-        const entry = { pool: name, kind: 'limited', since: month, source: event.source, chars: names };
+        const entry = { pool: name, kind: 'limited', months: [month], source: event.source, chars: names };
         flag(`新的限定卡池「${name}」（比對關鍵字用卡池名稱），請確認卡池名稱`);
         return withNotes({
             data: { ...poolsData, pools: insertEntry(raw, entry) },
-            change: { type: 'new-limited', pool: name, since: month, event: event.event, source: event.source, chars: names, added: names, removed: [] },
+            change: { type: 'new-limited', pool: name, month, event: event.event, source: event.source, chars: names, added: names, removed: [] },
             flags
         });
     }
-    const target = current[0];
-    if (sameSet(names, target.chars)) return none;
-    if (target.since === month) {
-        const d = diffNames(names, target.chars);
-        flag(`「${target.pool}」${month} 已經有一個版本，這期公告的名單不同（多了：${d.added.join('、') || '無'}；少了：${d.removed.join('、') || '無'}），需要手動處理`);
+    const pool = poolNames[0];
+    const versions = raw.map((p, i) => [p, i]).filter(([p]) => p.pool === pool && p.kind === 'limited');
+    const own = versions.find(([p]) => rawMonths(p).includes(month));
+    if (own) {
+        if (sameSet(names, own[0].chars)) return none;
+        const d = diffNames(names, own[0].chars);
+        flag(`「${pool}」${month} 已經有一個版本，這期公告的名單不同（多了：${d.added.join('、') || '無'}；少了：${d.removed.join('、') || '無'}），需要手動處理`);
         return none;
     }
-    const template = raw.find((p) => p.pool === target.pool && p.kind === 'limited' && Array.isArray(p.match));
-    const entry = { pool: target.pool, kind: 'limited', ...(template ? { match: template.match } : {}), since: month, source: event.source, chars: names };
+    // 和前一期的名單比較 (報告用)：月份比這期早的最後一個版本，沒有時用預設版本
+    const earlier = versions.filter(([p]) => rawMonths(p).some((m) => m < month))
+        .sort(([a], [b]) => maxMonth(a).localeCompare(maxMonth(b))).pop();
+    const base = versions.find(([p]) => rawMonths(p).length === 0);
+    const previous = earlier || base;
+    const diff = previous ? diffNames(names, previous[0].chars) : { added: names, removed: [] };
+    const previousLabel = earlier ? `${maxMonth(earlier[0])} 的版本` : '預設版本';
+
+    // 名單和某一期相同 → 把這個月加進那個版本
+    const same = versions.find(([p]) => rawMonths(p).length > 0 && sameSet(names, p.chars));
+    if (same) {
+        const pools = raw.map((p, i) => (i === same[1] ? { ...p, months: [...rawMonths(p), month].sort() } : p));
+        return withNotes({
+            data: { ...poolsData, pools },
+            change: { type: 'add-month', pool, month, event: event.event, source: event.source, chars: names, added: [], removed: [], previous: rawMonths(same[0]).join('、') },
+            flags
+        });
+    }
+    const template = raw.find((p) => p.pool === pool && p.kind === 'limited' && Array.isArray(p.match));
+    const entry = { pool, kind: 'limited', ...(template ? { match: template.match } : {}), months: [month], source: event.source, chars: names };
     return withNotes({
         data: { ...poolsData, pools: insertEntry(raw, entry) },
-        change: { type: 'add-version', pool: target.pool, since: month, event: event.event, source: event.source, chars: names, ...diffNames(names, target.chars), previous: target.since || '預設版本' },
+        change: { type: 'add-version', pool, month, event: event.event, source: event.source, chars: names, ...diff, previous: previousLabel },
         flags
     });
 }
@@ -332,6 +350,7 @@ function formatPoolsJson(data) {
 // PR 說明 / 紀錄用的 Markdown
 const TYPE_LABELS = {
     'add-version': '新增限定卡池版本',
+    'add-month': '限定卡池加上這個月',
     'new-limited': '新的限定卡池',
     'update-collab': '修改合作卡池',
     'new-collab': '新的合作卡池'
@@ -341,7 +360,8 @@ function describePoolChanges({ changes, flags }) {
     if (changes.length) {
         lines.push('### 卡池變動', '');
         changes.forEach((c) => {
-            const since = c.since ? `（${c.since} 起${c.previous ? `，前一版：${c.previous}` : ''}）` : '';
+            const since = c.type === 'add-month' ? `（${c.month}，名單和 ${c.previous} 相同）`
+                : c.month ? `（${c.month}${c.previous ? `，和前一期（${c.previous}）比較` : ''}）` : '';
             lines.push(`- **${TYPE_LABELS[c.type]}「${c.pool}」**${since} ← ${c.event} [公告](${c.source})`);
             if (c.added.length) lines.push(`  - 多了：${c.added.join('、')}`);
             if (c.removed.length) lines.push(`  - 少了：${c.removed.join('、')}`);

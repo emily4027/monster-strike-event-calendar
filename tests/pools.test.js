@@ -3,10 +3,11 @@ const test = require('node:test');
 const assert = require('node:assert/strict');
 const fs = require('node:fs');
 const path = require('node:path');
-const { poolKey, readPools, eventMonth, poolsForEvent, buildLimitedLookup, readNameFixes, resolveName, isDistinct, applyNameFix } = require('../pools.js');
+const { poolKey, readPools, eventMonth, matchingPools, poolsForEvent, buildLimitedLookup, readNameFixes, resolveName, isDistinct, applyNameFix } = require('../pools.js');
 
 const POOLS = readPools(JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'pools.json'), 'utf8')));
-const namesFor = (event) => poolsForEvent(POOLS, event).map((p) => p.pool);
+// 活動名稱對到哪些卡池 (不管有沒有那個月的版本)
+const namesFor = (event) => [...new Set(matchingPools(POOLS, event).map((p) => p.pool))];
 
 test('比對鍵：忽略空白、間隔號、全形半形、大小寫、結尾標點', () => {
     assert.equal(poolKey('彩・獸神祭'), poolKey('彩獸神祭'));
@@ -57,7 +58,7 @@ test('合作卡池：同一作品的不同彈用年月區分，合作祭典同�
 
 test('活動 → 卡池：合作卡池排在限定卡池前面；match 用 + 表示全部都要有', () => {
     const pools = readPools({ pools: [
-        { pool: '超獸神祭', kind: 'limited', chars: ['正宗'] },
+        { pool: '超獸神祭', kind: 'limited', months: ['2025-10'], chars: ['正宗'] },
         { pool: '鬼滅之刃', kind: 'collab', chars: ['竈門炭治郎'] },
         { pool: '世代 2015', kind: 'limited', match: ['世代+2015'], chars: ['卑彌呼'] }
     ] });
@@ -98,34 +99,35 @@ test('活動年月：從活動名稱開頭取出', () => {
     assert.equal(eventMonth('彩獸神祭'), '');
 });
 
-test('卡池版本：每期活動用那期公告的角色', () => {
+test('卡池版本：每期活動用那期公告的角色；沒有那個月的版本時不顯示', () => {
     assert.deepEqual(charsFor('2026-11月 彩獸神祭', '彩獸神祭'), ['卡蜜菈', '九十九', '馬克士威']);
     assert.deepEqual(charsFor('2026-08月 彩・獸神祭', '彩獸神祭'), ['卡蜜菈', '九十九']);
     assert.ok(charsFor('2026-10月 超獸神祭', '超獸神祭').includes('卡古雅'));
-    assert.ok(!charsFor('2025-01月 新年特別版「超獸神祭」 (艾兒)', '超獸神祭').includes('卡古雅'));
+    assert.deepEqual(charsFor('2026-12月 超獸神祭', '超獸神祭'), []);   // 不沿用 2026-10 的名單
     assert.ok(charsFor('2026-11月 綠色幻想', '綠色幻想').includes('CALEzMA'));
     assert.ok(charsFor('2026-07月 怪物彈珠精選角色DX～亞森篇〜', '怪物彈珠精選角色 DX').includes('新年怪盜亞森：羽根突模式'));
     // 同一個卡池只會出現一次
     assert.deepEqual(namesFor('2026-11月 彩獸神祭'), ['彩獸神祭']);
 });
 
-test('卡池版本：since 不晚於活動年月的最新版本；比所有版本早時用預設版本', () => {
+test('卡池版本：只用 months 含有活動年月的版本，不沿用別期；預設版本不用在活動上', () => {
     const pools = readPools({ pools: [
         { pool: 'A祭', kind: 'limited', chars: ['基本'] },
-        { pool: 'A祭', kind: 'limited', since: '2026-03', chars: ['三月'] },
-        { pool: 'A祭', kind: 'limited', since: '2026-08', chars: ['八月'] },
-        { pool: 'B祭', kind: 'limited', since: '2026-05', chars: ['只有新版'] },
-        { pool: 'C祭', kind: 'limited', since: '20260', chars: ['格式錯誤當成預設'] }
+        { pool: 'A祭', kind: 'limited', months: ['2026-03', '2026-05'], chars: ['三月'] },
+        { pool: 'A祭', kind: 'limited', months: ['2026-08'], chars: ['八月'] },
+        { pool: 'B祭', kind: 'limited', since: '2026-05', chars: ['舊格式'] },
+        { pool: 'C祭', kind: 'limited', months: ['20260'], chars: ['格式錯誤'] }
     ] });
     const of = (event) => poolsForEvent(pools, event).map((p) => p.chars[0]);
-    assert.deepEqual(of('2026-01月 A祭'), ['基本']);
     assert.deepEqual(of('2026-03月 A祭'), ['三月']);
-    assert.deepEqual(of('2026-07月 A祭'), ['三月']);
-    assert.deepEqual(of('2026-12月 A祭'), ['八月']);
-    assert.deepEqual(of('A祭'), ['基本']);
-    assert.deepEqual(of('2026-01月 B祭'), []);
-    assert.deepEqual(of('2026-06月 B祭'), ['只有新版']);
-    assert.deepEqual(of('2026-06月 C祭'), ['格式錯誤當成預設']);
+    assert.deepEqual(of('2026-05月 A祭'), ['三月']);
+    assert.deepEqual(of('2026-08月 A祭'), ['八月']);
+    assert.deepEqual(of('2026-04月 A祭'), []);
+    assert.deepEqual(of('2026-12月 A祭'), []);
+    assert.deepEqual(of('A祭'), []);
+    assert.deepEqual(of('2026-05月 B祭'), ['舊格式']);
+    assert.deepEqual(of('2026-06月 B祭'), []);
+    assert.deepEqual(of('2026-06月 C祭'), []);
 });
 
 test('限定角色查詢：新版本才加入的角色也認得', () => {
@@ -182,11 +184,11 @@ test('名稱修正：不同角色的標記可以新增、取消；合併兩個�
 
 test('限定角色查詢：預設版本 (官網名單) 優先，since 版本裡別的祭典的角色不會被標錯', () => {
     const pools = readPools({ pools: [
-        { pool: '激獸神祭', kind: 'limited', since: '2023-09', chars: ['惠比壽', '新角色乙'] },
+        { pool: '激獸神祭', kind: 'limited', months: ['2023-09'], chars: ['惠比壽', '新角色乙'] },
         { pool: '激獸神祭', kind: 'limited', chars: ['阿露卡'] },
         { pool: '火焰之星', kind: 'limited', chars: ['惠比壽'] },
-        { pool: '世代', kind: 'limited', since: '2023-01', chars: ['新角色甲', '一', '二', '三'] },
-        { pool: '彩獸神祭', kind: 'limited', since: '2023-01', chars: ['新角色甲'] }
+        { pool: '世代', kind: 'limited', months: ['2023-01'], chars: ['新角色甲', '一', '二', '三'] },
+        { pool: '彩獸神祭', kind: 'limited', months: ['2023-01'], chars: ['新角色甲'] }
     ] });
     const limitedOf = buildLimitedLookup(pools);
     assert.equal(limitedOf('惠比壽'), '火焰之星');

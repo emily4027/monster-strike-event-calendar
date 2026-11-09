@@ -18,13 +18,20 @@
             .replace(/[。，,、!?]+$/, '');
     }
 
-    // pools.json → [{ pool, kind, match: [[關鍵字...]], since, chars }]
+    // pools.json → [{ pool, kind, match: [[關鍵字...]], months: ['YYYY-MM'...], chars }]
     //   kind：limited (常設轉蛋活動的限定角色) | collab (合作活動的角色)
     //   match：活動名稱含有其中一組的「全部」關鍵字就算這個卡池，例如 "世代+2015"；省略時用卡池名稱
-    //   since：選填，"YYYY-MM"。同一個卡池的角色會隨時間變動 (新增限定角色、移到別的卡池)，
-    //          所以同名卡池可以有好幾個版本，每期活動用「since 不晚於活動年月」中最新的版本；
-    //          沒有 since 的是預設版本，活動比所有版本都早、或活動名稱沒有年月時使用
-    const SINCE_RE = /^\d{4}-\d{2}$/;
+    //   months：限定卡池用。這個名單是哪幾個月的活動 (取自那期官網公告)，例如 ["2024-09"]。
+    //           同一個卡池每期的角色不同 (新增限定角色、移到別的卡池)，所以每期公告各自一個版本；
+    //           名單相同的期數共用一個版本。活動只用「自己那個月」的版本，不會沿用別期的名單，
+    //           沒有那個月的版本時不顯示這個卡池 (寧可沒有，也不要顯示錯的)。
+    //           沒有 months 的是預設版本 (官網限定角色名單)，只用來標出角色屬於哪個限定卡池。
+    //           舊格式的 since ("YYYY-MM") 當成 months: [since] 讀
+    const MONTH_RE = /^\d{4}-\d{2}$/;
+    function readMonths(p) {
+        const list = Array.isArray(p.months) ? p.months : (typeof p.since === 'string' ? [p.since] : []);
+        return [...new Set(list.filter((m) => typeof m === 'string' && MONTH_RE.test(m)))].sort();
+    }
     function readPools(data) {
         const list = data && Array.isArray(data.pools) ? data.pools : [];
         return list
@@ -36,7 +43,7 @@
                 match: (Array.isArray(p.match) && p.match.length > 0 ? p.match : [p.pool])
                     .map((m) => String(m).split('+').map(poolKey).filter(Boolean))
                     .filter((parts) => parts.length > 0),
-                since: typeof p.since === 'string' && SINCE_RE.test(p.since) ? p.since : '',
+                months: readMonths(p),
                 chars: p.chars.filter((c) => typeof c === 'string' && c.trim()).map((c) => c.trim())
             }));
     }
@@ -47,35 +54,36 @@
         return m ? `${m[1]}-${m[2].padStart(2, '0')}` : '';
     }
 
-    // 同名卡池的版本中，挑這期活動要用的那個 (見 readPools 的 since 說明)
-    function pickVersion(versions, month) {
-        const base = versions.find((v) => !v.since);
-        if (!month) return base || versions[versions.length - 1];
-        const usable = versions.filter((v) => v.since && v.since <= month)
-            .sort((a, b) => (a.since < b.since ? 1 : -1));
-        return usable[0] || base || null;
-    }
-
-    // 活動名稱 → 符合的卡池 (合作在前，同類依 pools.json 的順序；同名卡池只取這期的版本)
-    //   「2025-10月 超獸神祭×鬼滅之刃」→ [鬼滅之刃 (collab), 超獸神祭 (limited)]
-    function poolsForEvent(pools, eventName) {
+    // 活動名稱對到的所有卡池 (含每個版本)，依 pools.json 的順序
+    function matchingPools(pools, eventName) {
         const key = poolKey(eventName);
         if (!key) return [];
+        return pools.filter((p) => p.match.some((parts) => parts.every((part) => key.includes(part))));
+    }
+
+    // 活動名稱 → 這期的卡池 (合作在前，同類依 pools.json 的順序)
+    //   合作卡池：match 本身帶年月，對到就算
+    //   限定卡池：只用 months 含有活動年月的版本 (見 readPools 的說明)
+    //   「2025-10月 超獸神祭×鬼滅之刃」→ [鬼滅之刃 (collab), 超獸神祭 (limited，有 2025-10 的版本時)]
+    function poolsForEvent(pools, eventName) {
         const month = eventMonth(eventName);
-        const byName = new Map();
-        pools.forEach((p) => {
-            if (!p.match.some((parts) => parts.every((part) => key.includes(part)))) return;
-            if (!byName.has(p.pool)) byName.set(p.pool, []);
-            byName.get(p.pool).push(p);
+        const found = [];
+        const seen = new Set();
+        matchingPools(pools, eventName).forEach((p) => {
+            if (seen.has(p.kind + '\u0000' + p.pool)) return;
+            const use = p.kind === 'collab' ? p
+                : (month ? pools.find((v) => v.pool === p.pool && v.kind === 'limited' && v.months.includes(month)) : null);
+            if (!use) return;
+            seen.add(p.kind + '\u0000' + p.pool);
+            found.push(use);
         });
-        const found = [...byName.values()].map((versions) => pickVersion(versions, month)).filter(Boolean);
         return [...found.filter((p) => p.kind === 'collab'), ...found.filter((p) => p.kind === 'limited')];
     }
 
     // 角色名稱 → 它所在的限定卡池 (不在名單上回傳空字串)
     //   先看預設版本 (官網限定角色名單，每隻角色只屬於一個卡池)；
-    //   預設版本沒有的角色 (之後才登場) 再看 since 版本：最早出現的版本優先，同時出現時名單短的優先。
-    //   since 版本是「那期轉蛋抽得到的角色」，可能包含其他祭典的限定角色，所以不能先看
+    //   預設版本沒有的角色 (之後才登場) 再看各期版本：最早的月份優先，同時出現時名單短的優先。
+    //   各期版本是「那期轉蛋抽得到的角色」，可能包含其他祭典的限定角色，所以不能先看
     function buildLimitedLookup(pools) {
         const byKey = new Map();
         const limited = pools.filter((p) => p.kind === 'limited');
@@ -83,9 +91,9 @@
             const key = poolKey(name);
             if (key && !byKey.has(key)) byKey.set(key, p.pool);
         });
-        limited.filter((p) => !p.since).forEach(add);
-        limited.filter((p) => p.since)
-            .sort((a, b) => a.since.localeCompare(b.since) || a.chars.length - b.chars.length)
+        limited.filter((p) => p.months.length === 0).forEach(add);
+        limited.filter((p) => p.months.length > 0)
+            .sort((a, b) => a.months[0].localeCompare(b.months[0]) || a.chars.length - b.chars.length)
             .forEach(add);
         return (name) => byKey.get(poolKey(name)) || '';
     }
@@ -172,7 +180,7 @@
     }
 
     const api = {
-        poolKey, readPools, eventMonth, poolsForEvent, buildLimitedLookup,
+        poolKey, readPools, eventMonth, matchingPools, poolsForEvent, buildLimitedLookup,
         readNameFixes, resolveName, isDistinct, applyNameFix
     };
     if (typeof module !== 'undefined' && module.exports) module.exports = api;

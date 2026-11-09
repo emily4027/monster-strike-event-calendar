@@ -46,7 +46,7 @@ const POOLS = () => ({
         { pool: '作品A', kind: 'collab', match: ['2026-05月+作品A'], source: 'https://example.com/a', chars: ['角色一', '角色 二', '角色三'] },
         { pool: '舊作品', kind: 'collab', match: ['2024-01月+舊作品'], chars: ['舊角色'] },
         { pool: '綠色幻想', kind: 'limited', source: 'https://example.com/list', chars: ['三日月宗近', '安朵美達', '麻穗呂芭', '波菈里絲', '西施'] },
-        { pool: '綠色幻想', kind: 'limited', since: '2026-11', chars: ['三日月宗近', '安朵美達', '麻穗呂芭', '波菈里絲', '西施', '艾特華爾', '新角色甲'] },
+        { pool: '綠色幻想', kind: 'limited', months: ['2026-11'], chars: ['三日月宗近', '安朵美達', '麻穗呂芭', '波菈里絲', '西施', '艾特華爾', '新角色甲'] },
         { pool: '怪物彈珠世代 2019', kind: 'limited', match: ['世代+2019'], chars: ['媽祖', '綿津見'] }
     ]
 });
@@ -84,23 +84,28 @@ test('黏在一起的名稱用已知名稱拆開；新名稱、只差一個字�
     assert.match(notes[2], /沒出現過/);
 });
 
-test('限定卡池：和這期原本的版本不同才加 since 版本，接在同名卡池後面', () => {
+test('限定卡池：名單和既有版本都不同 → 加一個只屬於這個月的版本，依月份排在同名卡池裡', () => {
     const html = FESTIVAL.replace('<br>艾特華爾　新角色甲', '圖坦卡門');
     const r = X.planPoolChanges(POOLS(), [item('2024-09月 綠色幻想', '2024-09-04', 'honke', html)]);
     assert.equal(r.changes.length, 1);
     const c = r.changes[0];
     assert.equal(c.type, 'add-version');
-    assert.equal(c.since, '2024-09');
+    assert.equal(c.month, '2024-09');
     assert.deepEqual(c.added, ['圖坦卡門']);
     assert.deepEqual(c.removed, []);
-    const names = r.data.pools.map((p) => `${p.pool}${p.since ? '@' + p.since : ''}`);
+    const names = r.data.pools.map((p) => `${p.pool}${p.months ? '@' + p.months.join(',') : ''}`);
     assert.deepEqual(names, ['作品A', '舊作品', '綠色幻想', '綠色幻想@2024-09', '綠色幻想@2026-11', '怪物彈珠世代 2019']);
     assert.ok(r.flags.some((f) => /黏在一起/.test(f.message)));
 
-    // 和現有版本相同 → 不加
+    // 和某一期的名單相同 → 把月份加進那個版本，不新增
     const same = X.planPoolChanges(POOLS(), [item('2026-12月 綠色幻想', '2026-12-04', 'honke', FESTIVAL)]);
-    assert.equal(same.changes.length, 0);
-    assert.equal(same.flags.length, 0);
+    assert.equal(same.changes[0].type, 'add-month');
+    assert.deepEqual(same.data.pools.find((p) => p.months && p.months.includes('2026-12')).months, ['2026-11', '2026-12']);
+    assert.equal(same.data.pools.length, POOLS().pools.length);
+    // 同一個月已經有相同名單 → 不動
+    const again = X.planPoolChanges(POOLS(), [item('2026-11月 綠色幻想', '2026-11-05', 'honke', FESTIVAL)]);
+    assert.equal(again.changes.length, 0);
+    assert.equal(again.flags.length, 0);
 });
 
 test('限定卡池：同一個月已經有不同名單的版本 → 不寫，只標出來', () => {
@@ -114,17 +119,18 @@ test('限定卡池：用活動名稱 (世代+2019) 對到卡池，期間限定�
     const r = X.planPoolChanges(POOLS(), [item('2026-07月 怪物彈珠世代2019 〜所羅門篇〜', '2026-07-12', 'honke', GENERATION)]);
     assert.equal(r.changes.length, 1);
     assert.deepEqual(r.changes[0].added, ['新年魔術王 所羅門', '與自由奪還者的共鬥 所羅門 MV']);
-    const added = r.data.pools.find((p) => p.since === '2026-07');
+    const added = r.data.pools.find((p) => p.months && p.months.includes('2026-07'));
     assert.deepEqual(added.match, ['世代+2019']);
 });
 
-test('同一批依日期由舊到新：後面的期數和前面剛加的版本比較', () => {
+test('同一批依日期由舊到新：後面名單相同的期數加進前面剛加的版本', () => {
     const html = FESTIVAL.replace('<br>艾特華爾　新角色甲', '圖坦卡門');
     const r = X.planPoolChanges(POOLS(), [
         item('2025-03月 綠色幻想', '2025-03-01', 'honke', html),
         item('2024-09月 綠色幻想', '2024-09-04', 'honke', html)
     ]);
-    assert.deepEqual(r.changes.map((c) => c.since), ['2024-09']);
+    assert.deepEqual(r.changes.map((c) => [c.type, c.month]), [['add-version', '2024-09'], ['add-month', '2025-03']]);
+    assert.deepEqual(r.data.pools.find((p) => p.months && p.months.includes('2024-09')).months, ['2024-09', '2025-03']);
 });
 
 test('合作卡池：只收★6（獸神化前），名單不同時改那一筆；沒有卡池時新增並標出來', () => {
