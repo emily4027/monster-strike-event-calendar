@@ -2,7 +2,8 @@
 // 對應到活動清單裡的活動後存成卡池資料檔 (格式和 scrape.js --pool-items 相同)，再由 apply-pools.js 開 PR。
 //
 // 執行：node scraper/backfill.js <卡池資料.json> [--since 2023-09-01] [--cache <資料夾>]
-//   --cache：讀過的官網頁面存在這個資料夾，重跑時不用再連官網 (本機除錯用)
+//   --cache：讀過的公告內文存在這個資料夾，重跑時不用再讀 (舊公告的內容不會變；
+//            公告列表和活動清單每次都重新讀)。GitHub Actions 用 actions/cache 保存這個資料夾
 //   活動清單讀 Firestore shared/events (所有人可讀，用 REST API，不需要金鑰)
 //   只讀官網和活動清單，不寫入任何雲端文件
 'use strict';
@@ -22,9 +23,11 @@ const GACHA_TITLE_RE = /轉蛋|祭|合作|×|限定|世代|精選|幻想|遊宴|
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const cacheIndex = process.argv.indexOf('--cache');
 const CACHE_DIR = cacheIndex !== -1 ? process.argv[cacheIndex + 1] : '';
+// 只快取公告內文 (/news/20240903_01.html 這種)；列表頁會有新公告，每次都重新讀
+const isArticle = (url) => /\/news\/\d{8}_[^/]+\.html$/.test(url);
 let lastFetchFromNetwork = false;
 async function fetchText(url) {
-    const cacheFile = CACHE_DIR ? path.join(CACHE_DIR, url.replace(/^https?:\/\//, '').replace(/[^\w.-]+/g, '_')) : '';
+    const cacheFile = CACHE_DIR && isArticle(url) ? path.join(CACHE_DIR, url.replace(/^https?:\/\//, '').replace(/[^\w.-]+/g, '_')) : '';
     if (cacheFile && fs.existsSync(cacheFile)) {
         lastFetchFromNetwork = false;
         return fs.readFileSync(cacheFile, 'utf8');

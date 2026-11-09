@@ -89,8 +89,16 @@ jobs:
         with:
           node-version: 22
 
+      # 讀過的公告內文存起來，下次回補只讀列表和新的公告 (舊公告內容不會變)
+      - name: 公告快取
+        uses: actions/cache@v4
+        with:
+          path: .cache/news
+          key: news-pages-${{ github.run_id }}
+          restore-keys: news-pages-
+
       - name: 讀取歷史公告
-        run: node scraper/backfill.js "$RUNNER_TEMP/pool-items.json" --since "${{ inputs.since }}"
+        run: node scraper/backfill.js "$RUNNER_TEMP/pool-items.json" --since "${{ inputs.since }}" --cache .cache/news
 
       - name: 卡池 PR
         env:
