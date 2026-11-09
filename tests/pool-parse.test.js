@@ -154,10 +154,64 @@ test('合作卡池：找不到★6、或段落不只一個 → 只標出來', ()
     assert.equal(noStar6.changes.length, 0);
     assert.match(noStar6.flags[0].message, /沒有「★6（獸神化前）」/);
 
-    const two = COLLAB.replace('<h4>合作活動冒險登場！</h4>', '<h4>轉蛋「作品A」再度登場！</h4>');
+    // 好幾個段落、名稱都和活動名稱對不起來 → 只標出來
+    const two = COLLAB.replace('<h4>轉蛋「作品A」開跑！</h4>', '<h4>轉蛋「作品B」開跑！</h4>').replace('<h4>合作活動冒險登場！</h4>', '<h4>轉蛋「作品C」再度登場！</h4>');
     const r = X.planPoolChanges(POOLS(), [item('2026-05月 作品A', '2026-05-10', 'collab', two)]);
     assert.equal(r.changes.length, 0);
     assert.match(r.flags[0].message, /好幾個轉蛋段落/);
+});
+
+test('稀有度的各種寫法、轉蛋《X》與沒有名稱的轉蛋標題都認得', () => {
+    ['★6（獸神化前）', '（獸神化前）★6', '獸神化前（★6）', '★6 (獸神化前)'].forEach((r) => assert.ok(X.isStar6Base(r), r));
+    assert.ok(!X.isStar6Base('★6'));
+    assert.ok(!X.isStar6Base('★5'));
+    const html = COLLAB.replace('<h4>轉蛋「作品A」開跑！</h4>', '<h4>轉蛋《作品A》開跑！</h4>');
+    assert.equal(X.parseCollabSections(html)[0].gachaName, '作品A');
+    const nested = COLLAB.replace('<h4>轉蛋「作品A」開跑！</h4>', '<h4>轉蛋「《作品A》系列」開跑！</h4>');
+    assert.equal(X.parseCollabSections(nested)[0].gachaName, '《作品A》系列');
+    const unnamed = COLLAB.replace('<h4>轉蛋「作品A」開跑！</h4>', '<h2>第2彈合作活動轉蛋開跑＆介紹角色！</h2>')
+        .replace('<h4>合作活動冒險登場！</h4>', '<h3>轉蛋《作品A 第1彈》登場</h3>');
+    const sections = X.parseCollabSections(unnamed);
+    assert.deepEqual(sections.map((x) => x.gachaName), ['', '作品A 第1彈']);
+    assert.deepEqual(X.pickSections(sections, '2026-05月 作品A'), [sections[0]]);
+});
+
+test('好幾個轉蛋段落：名稱相同的那段 → 名稱包含在活動名稱裡的那幾段', () => {
+    const s = (gachaName) => ({ gachaName, rows: [] });
+    const a = [s('超獸神祭×鬼滅之刃'), s('鬼滅之刃')];
+    assert.deepEqual(X.pickSections(a, '2025-10月 超獸神祭×鬼滅之刃'), [a[0]]);
+    const b = [s('葬送的芙莉蓮第2彈'), s('葬送的芙莉蓮第1彈')];
+    assert.deepEqual(X.pickSections(b, '2026-01月 葬送的芙莉蓮第二彈'), [b[0]]);
+    const c = [s('咒術迴戰'), s('STARLIGHT MIRAGE×劇場版 咒術迴戰 0')];
+    assert.deepEqual(X.pickSections(c, '2024-01月 咒術迴戰 & STARLIGHT MIRAGE×劇場版 咒術迴戰 0'), c);
+    assert.equal(X.pickSections([s('X'), s('Y')], '2026-01月 Z'), null);
+});
+
+test('合作祭典：公告只用屬性分限定角色 → 用對應屬性的名單；都沒有 → 沿用這期之前最近一期的名單', () => {
+    const elementTable = '<table><tbody><tr><th>木屬性</th></tr><tr><td>三日月宗近 西施</td></tr><tr><th>闇屬性</th></tr><tr><td>凱撒</td></tr></tbody></table>';
+    const byElement = X.planPoolChanges(POOLS(), [item('2026-05月 綠色幻想×作品A', '2026-05-10', 'collab', COLLAB + elementTable)]);
+    const v = byElement.data.pools.find((p) => p.pool === '綠色幻想' && p.months && p.months.includes('2026-05'));
+    assert.deepEqual(v.chars, ['三日月宗近', '西施']);
+
+    // 沒有限定表：沿用 2026-05 之前最近的一期 (沒有 → 標出來)；2026-12 之前最近的是 2026-11
+    const early = X.planPoolChanges(POOLS(), [item('2026-05月 綠色幻想×作品A', '2026-05-10', 'collab', COLLAB)]);
+    assert.ok(early.flags.some((f) => /之前也沒有可以沿用的名單/.test(f.message)));
+    const late = X.planPoolChanges(POOLS(), [item('2026-12月 綠色幻想×作品A', '2026-12-10', 'collab', COLLAB)]);
+    const inherit = late.changes.find((c) => c.type === 'inherit');
+    assert.equal(inherit.previous, '2026-11');
+    assert.deepEqual(late.data.pools.find((p) => p.pool === '綠色幻想' && p.months && p.months.includes('2026-12')).months, ['2026-11', '2026-12']);
+});
+
+test('本家：活動名稱對到好幾個卡池時，用表頭的名稱 (沒有這個卡池就新增)', () => {
+    const pools = { pools: [
+        { pool: '世代 2013＆2014', kind: 'limited', match: ['世代+2013'], chars: ['米迦勒'] },
+        { pool: '世代 2017', kind: 'limited', match: ['世代+2017'], chars: ['彌勒'] }
+    ] };
+    const html = '<table><tbody><tr><th>「世代 2013＆2014＆2017」限定角色</th></tr><tr><td>米迦勒　彌勒</td></tr>'
+        + '<tr><th>「世代 2013＆2014＆2017」期間限定角色</th></tr><tr><td>新年彌勒</td></tr></tbody></table>';
+    const r = X.planPoolChanges(pools, [item('2024-09月 世代 2013＆2014＆2017 (烏列爾)', '2024-09-30', 'honke', html)]);
+    assert.deepEqual(r.changes.map((c) => [c.type, c.pool]), [['new-limited', '世代 2013＆2014＆2017']]);
+    assert.deepEqual(r.changes[0].chars, ['米迦勒', '彌勒', '新年彌勒']);
 });
 
 test('pools.json 重新輸出和原本的檔案一字不差 (一個卡池一行)', () => {

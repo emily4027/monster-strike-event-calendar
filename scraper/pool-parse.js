@@ -12,6 +12,7 @@
 
 const { poolKey, readPools, matchingPools, poolsForEvent, eventMonth } = require('../pools.js');
 const { differsByOneCjk } = require('../js/catalog.js');
+const { matchKey } = require('./parse.js');
 
 // ---- HTML 小工具 ----
 const ENTITIES = { amp: '&', lt: '<', gt: '>', quot: '"', apos: "'", nbsp: ' ', '#39': "'" };
@@ -48,11 +49,16 @@ function splitNameCell(html) {
 }
 
 // ---- 解析公告 ----
-const LIMITED_HEADER_RE = /^(?:「([^「」]+)」限定角色|轉出對象(?:期間)?限定角色)$/;
+const LIMITED_HEADER_RE = /^(?:「([^「」]+)」(?:期間)?限定角色|轉出對象(?:期間)?限定角色)$/;
+const ELEMENT_HEADER_RE = /^([火水木光闇])屬性$/;
 
-// 限定角色表：[{ header, poolName (「X」限定角色的 X，沒有時空字串), names }]
-function parseLimitedLists(html) {
-    const lists = [];
+// 限定角色表：
+//   limited：[{ header, poolName (「X」限定角色的 X，沒有時空字串), names }]
+//   elements：{ 木: [...], 闇: [...] }，「木屬性」「闇屬性」這種依屬性分的名單
+//             (合作祭典的公告有時只用屬性分，例如「綠色幻想×MIDNIGHT PARTY×藥師少女的獨語」)
+function parseLimitedTables(html) {
+    const limited = [];
+    const elements = {};
     for (const table of String(html).match(/<table\b[\s\S]*?<\/table>/gi) || []) {
         let current = null;
         for (const cells of tableRows(table)) {
@@ -60,23 +66,43 @@ function parseLimitedLists(html) {
             if (cells.every((c) => c.tag === 'th')) {
                 const header = plainText(cells.map((c) => c.html).join(''));
                 const m = header.match(LIMITED_HEADER_RE);
-                current = m ? { header, poolName: m[1] ? m[1].trim() : '', names: [] } : null;
-                if (current) lists.push(current);
+                const e = header.match(ELEMENT_HEADER_RE);
+                if (m) {
+                    current = { header, poolName: m[1] ? m[1].trim() : '', names: [] };
+                    limited.push(current);
+                } else if (e) {
+                    elements[e[1]] = elements[e[1]] || [];
+                    current = { names: elements[e[1]] };
+                } else {
+                    current = null;
+                }
                 continue;
             }
             if (current) cells.forEach((c) => current.names.push(...splitNameCell(c.html)));
         }
     }
-    return lists.filter((l) => l.names.length > 0);
+    return { limited: limited.filter((l) => l.names.length > 0), elements };
+}
+const parseLimitedLists = (html) => parseLimitedTables(html).limited;
+
+// 轉蛋段落的標題：「轉蛋「X」」「轉蛋《X》」，或沒有名稱的「…轉蛋開跑」(目錄那種有換行的標題不算)
+const GACHA_NAME_RE = /轉蛋(?:「([^「」]+)」|《([^《》]+)》)/;
+function gachaHeading(inner) {
+    if (/<br/i.test(inner)) return null;
+    const text = plainText(inner);
+    if (/INDEX/i.test(text)) return null;
+    const named = text.match(GACHA_NAME_RE);
+    if (named) return { heading: text, gachaName: (named[1] || named[2]).trim() };
+    if (/轉蛋[^「《]*開跑/.test(text)) return { heading: text, gachaName: '' };
+    return null;
 }
 
-// 合作活動的角色表：標題含「轉蛋「X」」的段落裡，表頭有「角色…」和「稀有度」的表格
+// 合作活動的角色表：轉蛋段落裡，表頭有「角色…」和「稀有度」的表格
 //   → [{ heading, gachaName, rows: [{ name, rarity }] }] (一個段落一筆)
+//   轉蛋標題 (任何層級) 開始新的段落；其他標題只有層級不深於第一個轉蛋標題時才結束段落
 function parseCollabSections(html) {
     const tokens = [...String(html).matchAll(/<(h[2-6])\b[^>]*>([\s\S]*?)<\/\1>|<table\b[\s\S]*?<\/table>/gi)];
-    // 段落標題的層級：第一個「轉蛋「」標題的層級 (目錄那種有換行的標題不算)
-    const isGachaHeading = (inner) => !/<br/i.test(inner) && /轉蛋「[^「」]+」/.test(plainText(inner)) && !/INDEX/i.test(plainText(inner));
-    const first = tokens.find((t) => t[1] && isGachaHeading(t[2]));
+    const first = tokens.find((t) => t[1] && gachaHeading(t[2]));
     if (!first) return [];
     const level = Number(first[1][1]);
 
@@ -84,12 +110,12 @@ function parseCollabSections(html) {
     let section = null;
     for (const t of tokens) {
         if (t[1]) {
-            if (Number(t[1][1]) > level) continue;   // 小標題不換段落
-            section = null;
-            if (isGachaHeading(t[2])) {
-                const heading = plainText(t[2]);
-                section = { heading, gachaName: heading.match(/轉蛋「([^「」]+)」/)[1].trim(), rows: [] };
+            const g = gachaHeading(t[2]);
+            if (g) {
+                section = { ...g, rows: [] };
                 sections.push(section);
+            } else if (Number(t[1][1]) <= level) {
+                section = null;
             }
             continue;
         }
@@ -109,11 +135,16 @@ function parseCollabSections(html) {
     return sections.filter((s) => s.rows.length > 0);
 }
 
-const isStar6Base = (rarity) => /★6\(獸神化前\)/.test(String(rarity).normalize('NFKC').replace(/\s+/g, ''));
+// 「★6（獸神化前）」「（獸神化前）★6」「獸神化前（★6）」都算
+const isStar6Base = (rarity) => {
+    const s = String(rarity).normalize('NFKC').replace(/[\s()]/g, '');
+    return /★6/.test(s) && /獸神化前/.test(s);
+};
 
 // 公告 → 卡池需要的資料 (存起來，之後再和 pools.json 比對)
 function extractPoolData(html) {
-    return { limited: parseLimitedLists(html), collab: parseCollabSections(html) };
+    const { limited, elements } = parseLimitedTables(html);
+    return { limited, elements, collab: parseCollabSections(html) };
 }
 
 // ---- 名稱比對 ----
@@ -201,97 +232,99 @@ function insertEntry(list, entry) {
     return next;
 }
 
-// 一期活動的其中一種卡池 (mode：collab 合作 / limited 本家限定) → 變動。
-// 回傳 { data, change, flags }，data 是套用後的 pools.json 內容
-//   item：{ event: { event, date, tag, source }, data: extractPoolData(...) }
-function planPart(poolsData, item, mode) {
+// 合作祭典公告只用屬性分限定角色時，屬性對應的本家卡池
+const ELEMENT_OF_POOL = { '綠色幻想': '木', 'Midnight Party': '闇', '水之遊宴': '水', '火焰之星': '火', 'Starlight Mirage': '光' };
+
+// 一篇公告有好幾個轉蛋段落時，挑這場活動的段落：
+//   名稱和活動名稱相同的那段 → 名稱包含在活動名稱裡的那幾段 (活動同時包含好幾個轉蛋，例如
+//   「咒術迴戰 & STARLIGHT MIRAGE×劇場版 咒術迴戰 0」) → 唯一一個沒有名稱的段落；都不符合時回傳 null
+function pickSections(sections, eventName) {
+    if (sections.length <= 1) return sections;
+    const key = matchKey(eventName);
+    const exact = sections.filter((s) => s.gachaName && matchKey(s.gachaName) === key);
+    if (exact.length) return exact.slice(0, 1);
+    const contained = sections.filter((s) => s.gachaName && key.includes(matchKey(s.gachaName)));
+    if (contained.length) return contained;
+    const unnamed = sections.filter((s) => !s.gachaName);
+    return unnamed.length === 1 ? unnamed : null;
+}
+
+const result = (data, change, flags) => ({ data, changes: change ? [change] : [], flags });
+
+// 合作卡池：轉蛋段落裡「★6（獸神化前）」的角色
+function planCollab(poolsData, item) {
     const { event, data } = item;
     const flags = [];
     const flag = (message) => flags.push({ event: event.event, source: event.source, message });
     const month = eventMonth(event.event);
     const raw = Array.isArray(poolsData.pools) ? poolsData.pools : [];
     const parsed = readPools(poolsData);
-    const known = knownNames(poolsData);
-    const none = { data: poolsData, change: null, flags };
+    const none = result(poolsData, null, flags);
 
-    if (mode === 'collab') {
-        const sections = data.collab
-            .map((s) => ({ ...s, star6: s.rows.filter((r) => isStar6Base(r.rarity)).map((r) => r.name) }))
-            .filter((s) => s.star6.length > 0);
-        if (sections.length === 0) {
-            if (data.collab.length > 0) flag('轉蛋段落的角色表裡沒有「★6（獸神化前）」的角色，需要手動處理');
-            else flag('找不到轉蛋段落的角色表（公告格式可能不同），需要手動處理');
-            return none;
-        }
-        if (sections.length > 1) {
-            flag('公告裡有好幾個轉蛋段落，不確定這期是哪一個，需要手動處理：'
-                + sections.map((s) => `「${s.heading}」→ ${s.star6.join('、')}`).join('；'));
-            return none;
-        }
-        const { names, notes } = cleanNames(sections[0].star6, known);
-        // 名稱的提醒只在這期真的有變動時列出
-        const withNotes = (result) => { if (result.change) notes.forEach(flag); return result; };
-        const existing = poolsForEvent(parsed, event.event).filter((p) => p.kind === 'collab');
-        if (existing.length > 1) {
-            flag(`活動名稱對到好幾個合作卡池（${existing.map((p) => p.pool).join('、')}），需要手動處理`);
-            return none;
-        }
-        if (existing.length === 1) {
-            const target = existing[0];
-            if (sameSet(names, target.chars)) return none;
-            const index = raw.findIndex((p) => p.pool === target.pool && p.kind === 'collab');
-            const pools = raw.map((p, i) => (i === index ? { ...p, ...(p.source ? {} : { source: event.source }), chars: names } : p));
-            return withNotes({
-                data: { ...poolsData, pools },
-                change: { type: 'update-collab', pool: target.pool, event: event.event, source: event.source, chars: names, ...diffNames(names, target.chars) },
-                flags
-            });
-        }
-        if (!month) {
-            flag('活動名稱沒有年月，無法建立合作卡池，需要手動處理');
-            return none;
-        }
-        const name = sections[0].gachaName;
-        const entry = { pool: name, kind: 'collab', match: [`${month}月+${name}`], source: event.source, chars: names };
-        flag(`新的合作卡池「${name}」（比對關鍵字 ${entry.match[0]}），請確認卡池名稱`);
-        return withNotes({
-            data: { ...poolsData, pools: insertEntry(raw, entry) },
-            change: { type: 'new-collab', pool: name, event: event.event, source: event.source, chars: names, added: names, removed: [] },
-            flags
-        });
+    const all = data.collab
+        .map((s) => ({ ...s, star6: s.rows.filter((r) => isStar6Base(r.rarity)).map((r) => r.name) }))
+        .filter((s) => s.star6.length > 0);
+    if (all.length === 0) {
+        if (data.collab.length > 0) flag('轉蛋段落的角色表裡沒有「★6（獸神化前）」的角色，需要手動處理');
+        else flag('找不到轉蛋段落的角色表（公告格式可能不同），需要手動處理');
+        return none;
     }
-
-    // 本家 (祭典等)：限定角色表。每期一個版本，只用在自己那個月 (pools.js 的 poolsForEvent)
-    if (data.limited.length === 0) return none;
+    const sections = pickSections(all, event.event);
+    if (!sections) {
+        flag('公告裡有好幾個轉蛋段落，不確定這期是哪一個，需要手動處理：'
+            + all.map((s) => `「${s.heading}」→ ${s.star6.join('、')}`).join('；'));
+        return none;
+    }
+    const { names, notes } = cleanNames(sections.flatMap((s) => s.star6), knownNames(poolsData));
+    // 名稱的提醒只在這期真的有變動時列出
+    const done = (data2, change) => {
+        if (change) notes.forEach(flag);
+        return result(data2, change, flags);
+    };
+    const existing = poolsForEvent(parsed, event.event).filter((p) => p.kind === 'collab');
+    if (existing.length > 1) {
+        flag(`活動名稱對到好幾個合作卡池（${existing.map((p) => p.pool).join('、')}），需要手動處理`);
+        return none;
+    }
+    if (existing.length === 1) {
+        const target = existing[0];
+        if (sameSet(names, target.chars)) return none;
+        const index = raw.findIndex((p) => p.pool === target.pool && p.kind === 'collab');
+        const pools = raw.map((p, i) => (i === index ? { ...p, ...(p.source ? {} : { source: event.source }), chars: names } : p));
+        return done({ ...poolsData, pools },
+            { type: 'update-collab', pool: target.pool, event: event.event, source: event.source, chars: names, ...diffNames(names, target.chars) });
+    }
     if (!month) {
-        flag('活動名稱沒有年月，無法決定卡池版本，需要手動處理');
+        flag('活動名稱沒有年月，無法建立合作卡池，需要手動處理');
         return none;
     }
-    const { names, notes } = cleanNames(data.limited.flatMap((l) => l.names), known);
-    const withNotes = (result) => { if (result.change) notes.forEach(flag); return result; };
-    let poolNames = [...new Set(matchingPools(parsed, event.event).filter((p) => p.kind === 'limited').map((p) => p.pool))];
-    if (poolNames.length === 0) {
-        // 活動名稱對不到時，用表頭「「X」限定角色」的 X 找同名卡池
-        const header = data.limited.map((l) => l.poolName).find(Boolean);
-        const byHeader = header ? parsed.find((p) => p.kind === 'limited' && poolKey(p.pool) === poolKey(header)) : null;
-        if (byHeader) poolNames = [byHeader.pool];
-    }
-    if (poolNames.length > 1) {
-        flag(`活動名稱對到好幾個限定卡池（${poolNames.join('、')}），需要手動處理`);
-        return none;
-    }
-    if (poolNames.length === 0) {
-        const name = data.limited.map((l) => l.poolName).find(Boolean) || event.event.replace(/^\d{4}-\d{2}月\s*/, '');
-        const entry = { pool: name, kind: 'limited', months: [month], source: event.source, chars: names };
-        flag(`新的限定卡池「${name}」（比對關鍵字用卡池名稱），請確認卡池名稱`);
-        return withNotes({
-            data: { ...poolsData, pools: insertEntry(raw, entry) },
-            change: { type: 'new-limited', pool: name, month, event: event.event, source: event.source, chars: names, added: names, removed: [] },
-            flags
-        });
-    }
-    const pool = poolNames[0];
+    const name = sections.map((s) => s.gachaName).find(Boolean) || event.event.replace(/^\d{4}-\d{2}月\s*/, '');
+    const entry = { pool: name, kind: 'collab', match: [`${month}月+${name}`], source: event.source, chars: names };
+    flag(`新的合作卡池「${name}」（比對關鍵字 ${entry.match[0]}），請確認卡池名稱`);
+    return done({ ...poolsData, pools: insertEntry(raw, entry) },
+        { type: 'new-collab', pool: name, event: event.event, source: event.source, chars: names, added: names, removed: [] });
+}
+
+// 本家限定卡池的一期名單 → 變動 (pool 不存在時新增卡池)
+function planLimitedList(poolsData, event, pool, rawNames) {
+    const flags = [];
+    const flag = (message) => flags.push({ event: event.event, source: event.source, message });
+    const month = eventMonth(event.event);
+    const raw = Array.isArray(poolsData.pools) ? poolsData.pools : [];
+    const none = result(poolsData, null, flags);
+    const { names, notes } = cleanNames(rawNames, knownNames(poolsData));
+    const done = (data2, change) => {
+        if (change) notes.forEach(flag);
+        return result(data2, change, flags);
+    };
+
     const versions = raw.map((p, i) => [p, i]).filter(([p]) => p.pool === pool && p.kind === 'limited');
+    if (versions.length === 0) {
+        const entry = { pool, kind: 'limited', months: [month], source: event.source, chars: names };
+        flag(`新的限定卡池「${pool}」（比對關鍵字用卡池名稱），請確認卡池名稱`);
+        return done({ ...poolsData, pools: insertEntry(raw, entry) },
+            { type: 'new-limited', pool, month, event: event.event, source: event.source, chars: names, added: names, removed: [] });
+    }
     const own = versions.find(([p]) => rawMonths(p).includes(month));
     if (own) {
         if (sameSet(names, own[0].chars)) return none;
@@ -300,48 +333,123 @@ function planPart(poolsData, item, mode) {
         return none;
     }
     // 和前一期的名單比較 (報告用)：月份比這期早的最後一個版本，沒有時用預設版本
-    const earlier = versions.filter(([p]) => rawMonths(p).some((m) => m < month))
-        .sort(([a], [b]) => maxMonth(a).localeCompare(maxMonth(b))).pop();
+    const earlier = latestBefore(versions, month);
     const base = versions.find(([p]) => rawMonths(p).length === 0);
     const previous = earlier || base;
     const diff = previous ? diffNames(names, previous[0].chars) : { added: names, removed: [] };
-    const previousLabel = earlier ? `${maxMonth(earlier[0])} 的版本` : '預設版本';
 
     // 名單和某一期相同 → 把這個月加進那個版本
     const same = versions.find(([p]) => rawMonths(p).length > 0 && sameSet(names, p.chars));
     if (same) {
-        const pools = raw.map((p, i) => (i === same[1] ? { ...p, months: [...rawMonths(p), month].sort() } : p));
-        return withNotes({
-            data: { ...poolsData, pools },
-            change: { type: 'add-month', pool, month, event: event.event, source: event.source, chars: names, added: [], removed: [], previous: rawMonths(same[0]).join('、') },
-            flags
-        });
+        return done(addMonth(poolsData, same[1], month),
+            { type: 'add-month', pool, month, event: event.event, source: event.source, chars: names, added: [], removed: [], previous: rawMonths(same[0]).join('、') });
     }
     const template = raw.find((p) => p.pool === pool && p.kind === 'limited' && Array.isArray(p.match));
     const entry = { pool, kind: 'limited', ...(template ? { match: template.match } : {}), months: [month], source: event.source, chars: names };
-    return withNotes({
-        data: { ...poolsData, pools: insertEntry(raw, entry) },
-        change: { type: 'add-version', pool, month, event: event.event, source: event.source, chars: names, ...diff, previous: previousLabel },
-        flags
+    return done({ ...poolsData, pools: insertEntry(raw, entry) },
+        { type: 'add-version', pool, month, event: event.event, source: event.source, chars: names, ...diff,
+            previous: earlier ? `${maxMonth(earlier[0])} 的版本` : '預設版本' });
+}
+
+// 同名卡池裡，月份比 month 早的最後一個版本 ([entry, index])
+function latestBefore(versions, month) {
+    return versions.filter(([p]) => rawMonths(p).some((m) => m < month))
+        .sort(([a], [b]) => maxBefore(a, month).localeCompare(maxBefore(b, month))).pop() || null;
+}
+const maxBefore = (p, month) => rawMonths(p).filter((m) => m < month).sort().pop() || '';
+
+function addMonth(poolsData, index, month) {
+    const pools = poolsData.pools.map((p, i) => (i === index ? { ...p, months: [...rawMonths(p), month].sort() } : p));
+    return { ...poolsData, pools };
+}
+
+// 合作祭典的公告沒列出本家限定角色時 (官網漏寫)：沿用這個卡池在這期之前最近一期的名單
+function inheritEarlier(poolsData, event, pool) {
+    const flags = [];
+    const month = eventMonth(event.event);
+    const raw = poolsData.pools;
+    const versions = raw.map((p, i) => [p, i]).filter(([p]) => p.pool === pool && p.kind === 'limited');
+    if (versions.some(([p]) => rawMonths(p).includes(month))) return result(poolsData, null, flags);
+    const earlier = latestBefore(versions, month);
+    if (!earlier) {
+        flags.push({ event: event.event, source: event.source,
+            message: `公告沒有列出「${pool}」的本家限定角色，之前也沒有可以沿用的名單，本家限定的部分需要手動處理` });
+        return result(poolsData, null, flags);
+    }
+    const from = maxBefore(earlier[0], month);
+    return result(addMonth(poolsData, earlier[1], month),
+        { type: 'inherit', pool, month, event: event.event, source: event.source, chars: earlier[0].chars, added: [], removed: [], previous: from },
+        flags);
+}
+
+// 合作祭典 (「超獸神祭×孤獨搖滾！」)：活動名稱對到的每個本家限定卡池
+//   公告有「「超獸神祭」限定角色」表 → 用那張表；只用屬性分 → 用那個屬性的名單；都沒有 → 沿用之前最近一期
+function planComboLimited(poolsData, item) {
+    const { event, data } = item;
+    const pools = [...new Set(matchingPools(readPools(poolsData), event.event).filter((p) => p.kind === 'limited').map((p) => p.pool))];
+    let current = poolsData;
+    const changes = [];
+    const flags = [];
+    pools.forEach((pool) => {
+        let tables = data.limited.filter((t) => t.poolName && poolKey(t.poolName) === poolKey(pool));
+        if (tables.length === 0 && pools.length === 1) tables = data.limited;
+        const element = ELEMENT_OF_POOL[pool];
+        const elementNames = element && data.elements ? data.elements[element] : null;
+        const r = tables.length > 0 ? planLimitedList(current, event, pool, tables.flatMap((t) => t.names))
+            : elementNames && elementNames.length ? planLimitedList(current, event, pool, elementNames)
+                : inheritEarlier(current, event, pool);
+        current = r.data;
+        changes.push(...r.changes);
+        flags.push(...r.flags);
     });
+    return { data: current, changes, flags };
+}
+
+// 本家 (祭典等)：限定角色表 → 活動名稱對到的限定卡池
+function planHonke(poolsData, item) {
+    const { event, data } = item;
+    const flags = [];
+    const flag = (message) => flags.push({ event: event.event, source: event.source, message });
+    if (data.limited.length === 0) return result(poolsData, null, flags);
+    if (!eventMonth(event.event)) {
+        flag('活動名稱沒有年月，無法決定卡池版本，需要手動處理');
+        return result(poolsData, null, flags);
+    }
+    const parsed = readPools(poolsData);
+    const header = data.limited.map((l) => l.poolName).find(Boolean) || '';
+    const byHeader = header ? parsed.find((p) => p.kind === 'limited' && poolKey(p.pool) === poolKey(header)) : null;
+    let poolNames = [...new Set(matchingPools(parsed, event.event).filter((p) => p.kind === 'limited').map((p) => p.pool))];
+    if (poolNames.length > 1) {
+        // 好幾個卡池都對到 (「怪物彈珠世代 2013＆2014＆2017」)：表頭寫的是哪個就用哪個，都不是時當成新的卡池
+        if (byHeader && poolNames.includes(byHeader.pool)) poolNames = [byHeader.pool];
+        else if (header && !byHeader) poolNames = [header];
+        else {
+            flag(`活動名稱對到好幾個限定卡池（${poolNames.join('、')}），需要手動處理`);
+            return result(poolsData, null, flags);
+        }
+    }
+    if (poolNames.length === 0) poolNames = [byHeader ? byHeader.pool : (header || event.event.replace(/^\d{4}-\d{2}月\s*/, ''))];
+    return planLimitedList(poolsData, event, poolNames[0], data.limited.flatMap((l) => l.names));
 }
 
 // 一期活動 → 卡池的變動 { data, changes, flags }
-//   合作活動：合作卡池；活動名稱也對到本家限定卡池時 (「超獸神祭×孤獨搖滾！」這種合作祭典)，
-//   再用同一篇公告的「「超獸神祭」限定角色」表更新本家限定卡池，兩種卡池分開
+//   本家活動：本家限定卡池
+//   合作活動：合作卡池；活動名稱也對到本家限定卡池時 (合作祭典) 再更新本家限定卡池，兩種卡池分開
 function planOne(poolsData, item) {
-    const only = (r) => ({ data: r.data, changes: r.change ? [r.change] : [], flags: r.flags });
-    if (item.event.tag !== 'collab') return only(planPart(poolsData, item, 'limited'));
-    const collab = only(planPart(poolsData, item, 'collab'));
-    const limitedNames = [...new Set(matchingPools(readPools(collab.data), item.event.event)
-        .filter((p) => p.kind === 'limited').map((p) => p.pool))];
-    if (limitedNames.length === 0) return collab;
-    if (item.data.limited.length === 0) {
-        collab.flags.push({ event: item.event.event, source: item.event.source,
-            message: `活動名稱也對到本家限定卡池（${limitedNames.join('、')}），但公告裡沒有「「X」限定角色」的表，本家限定的部分需要手動處理` });
-        return collab;
+    if (item.event.unlogged) {
+        // 活動清單沒有的本家祭典 (回補用)：只加進已經有的卡池，不新增卡池、不標出來
+        const parsed = readPools(poolsData);
+        const header = item.data.limited.map((l) => l.poolName).find(Boolean) || '';
+        const exists = matchingPools(parsed, item.event.event).some((p) => p.kind === 'limited')
+            || (header && parsed.some((p) => p.kind === 'limited' && poolKey(p.pool) === poolKey(header)));
+        if (!exists) return { data: poolsData, changes: [], flags: [] };
+        const r = planHonke(poolsData, item);
+        if (r.changes.some((c) => c.type === 'new-limited')) return { data: poolsData, changes: [], flags: [] };
+        return { data: r.data, changes: r.changes.map((c) => ({ ...c, unlogged: true })), flags: [] };
     }
-    const limited = only(planPart(collab.data, item, 'limited'));
+    if (item.event.tag !== 'collab') return planHonke(poolsData, item);
+    const collab = planCollab(poolsData, item);
+    const limited = planComboLimited(collab.data, item);
     return { data: limited.data, changes: [...collab.changes, ...limited.changes], flags: [...collab.flags, ...limited.flags] };
 }
 
@@ -371,22 +479,32 @@ function formatPoolsJson(data) {
 const TYPE_LABELS = {
     'add-version': '新增限定卡池版本',
     'add-month': '限定卡池加上這個月',
+    'inherit': '限定卡池沿用之前的名單',
     'new-limited': '新的限定卡池',
     'update-collab': '修改合作卡池',
     'new-collab': '新的合作卡池'
 };
 function describePoolChanges({ changes, flags }) {
     const lines = [];
-    if (changes.length) {
+    const describe = (c) => {
+        const since = c.type === 'inherit' ? `（${c.month}，公告沒列出本家限定角色，沿用 ${c.previous} 的名單）`
+            : c.type === 'add-month' ? `（${c.month}，名單和 ${c.previous} 相同）`
+            : c.month ? `（${c.month}${c.previous ? `，和前一期（${c.previous}）比較` : ''}）` : '';
+        lines.push(`- **${TYPE_LABELS[c.type]}「${c.pool}」**${since} ← ${c.event} [公告](${c.source})`);
+        if (c.added.length) lines.push(`  - 多了：${c.added.join('、')}`);
+        if (c.removed.length) lines.push(`  - 少了：${c.removed.join('、')}`);
+        lines.push(`  - 名單：${c.chars.join('、')}`);
+    };
+    const logged = changes.filter((c) => !c.unlogged);
+    const unlogged = changes.filter((c) => c.unlogged);
+    if (logged.length) {
         lines.push('### 卡池變動', '');
-        changes.forEach((c) => {
-            const since = c.type === 'add-month' ? `（${c.month}，名單和 ${c.previous} 相同）`
-                : c.month ? `（${c.month}${c.previous ? `，和前一期（${c.previous}）比較` : ''}）` : '';
-            lines.push(`- **${TYPE_LABELS[c.type]}「${c.pool}」**${since} ← ${c.event} [公告](${c.source})`);
-            if (c.added.length) lines.push(`  - 多了：${c.added.join('、')}`);
-            if (c.removed.length) lines.push(`  - 少了：${c.removed.join('、')}`);
-            lines.push(`  - 名單：${c.chars.join('、')}`);
-        });
+        logged.forEach(describe);
+        lines.push('');
+    }
+    if (unlogged.length) {
+        lines.push('### 活動清單沒有的祭典（只記下那期名單，之後的合作祭典公告漏寫本家限定角色時沿用）', '');
+        unlogged.forEach(describe);
         lines.push('');
     }
     if (flags.length) {
@@ -398,6 +516,6 @@ function describePoolChanges({ changes, flags }) {
 }
 
 module.exports = {
-    splitNameCell, parseLimitedLists, parseCollabSections, isStar6Base, extractPoolData,
+    splitNameCell, parseLimitedLists, parseLimitedTables, pickSections, parseCollabSections, isStar6Base, extractPoolData,
     splitGlued, knownNames, cleanNames, planPoolChanges, formatPoolsJson, describePoolChanges
 };

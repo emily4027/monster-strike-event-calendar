@@ -148,12 +148,21 @@ async function main() {
         items.push({ event: { event: event.event, date: event.date, tag: event.tag, source: found.scraped.source }, data: found.data });
     });
 
+    // 活動清單裡沒有的本家祭典也記下那期的名單 (只加進已經有的卡池，不新增卡池、不標出來)，
+    // 之後的合作祭典公告漏寫本家限定角色時，才有「之前最近一期」的名單可以沿用
+    const used = new Set(items.map((i) => i.event.source));
+    parsed.filter((p) => p.scraped.tag === 'honke' && p.scraped.date >= since && !used.has(p.scraped.source) && p.data.limited.length > 0)
+        .forEach((p) => items.push({
+            event: { event: p.scraped.event, date: p.scraped.date, tag: 'honke', source: p.scraped.source, unlogged: true },
+            data: p.data
+        }));
+
     // 對不上公告的活動列出來，不用猜的
     const flags = events.filter((e) => !matched.has(e.event))
         .sort((a, b) => a.date.localeCompare(b.date))
         .map((e) => ({ event: e.event, source: '', message: '找不到對應的官網公告（名稱或開始日和公告不同，或官網沒有另外發公告），卡池沒有更新' }));
     fs.writeFileSync(out, JSON.stringify({ items, flags }, null, 2));
-    console.log(`對應到 ${items.length} 場活動，對不上 ${flags.length} 場；存到 ${out}`);
+    console.log(`對應到 ${matched.size} 場活動，對不上 ${flags.length} 場；另外記下清單沒有的祭典 ${items.length - matched.size} 篇；存到 ${out}`);
 }
 
 if (require.main === module) {
