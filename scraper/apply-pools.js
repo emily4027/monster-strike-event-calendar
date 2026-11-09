@@ -11,6 +11,7 @@ const path = require('path');
 const { planPoolChanges, formatPoolsJson, describePoolChanges } = require('./pool-parse.js');
 
 const POOLS_FILE = path.join(__dirname, '..', 'pools.json');
+const OVERRIDES_FILE = path.join(__dirname, 'name-overrides.json');
 
 function main() {
     const [itemsFile, reportFile] = process.argv.slice(2);
@@ -21,7 +22,8 @@ function main() {
     const input = JSON.parse(fs.readFileSync(itemsFile, 'utf8'));
     const items = Array.isArray(input.items) ? input.items : [];
     const before = JSON.parse(fs.readFileSync(POOLS_FILE, 'utf8'));
-    const result = planPoolChanges(before, items);
+    const overrides = fs.existsSync(OVERRIDES_FILE) ? JSON.parse(fs.readFileSync(OVERRIDES_FILE, 'utf8')) : {};
+    const result = planPoolChanges(before, items, overrides);
     result.flags.push(...(Array.isArray(input.flags) ? input.flags : []));
 
     if (result.changes.length > 0) fs.writeFileSync(POOLS_FILE, formatPoolsJson(result.data));

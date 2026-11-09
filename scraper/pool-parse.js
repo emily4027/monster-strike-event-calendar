@@ -232,6 +232,14 @@ function insertEntry(list, entry) {
     return next;
 }
 
+// 管理員確認過的名稱對應 (scraper/name-overrides.json)：公告上的寫法 → 卡池裡的寫法
+let overrides = { global: {}, pools: {} };
+function applyOverrides(names, pool) {
+    const own = (overrides.pools && overrides.pools[pool]) || {};
+    const all = overrides.global || {};
+    return names.map((n) => own[n] || all[n] || n);
+}
+
 // 合作祭典公告只用屬性分限定角色時，屬性對應的本家卡池
 const ELEMENT_OF_POOL = { '綠色幻想': '木', 'Midnight Party': '闇', '水之遊宴': '水', '火焰之星': '火', 'Starlight Mirage': '光' };
 
@@ -275,17 +283,18 @@ function planCollab(poolsData, item) {
             + all.map((s) => `「${s.heading}」→ ${s.star6.join('、')}`).join('；'));
         return none;
     }
-    const { names, notes } = cleanNames(sections.flatMap((s) => s.star6), knownNames(poolsData));
-    // 名稱的提醒只在這期真的有變動時列出
-    const done = (data2, change) => {
-        if (change) notes.forEach(flag);
-        return result(data2, change, flags);
-    };
     const existing = poolsForEvent(parsed, event.event).filter((p) => p.kind === 'collab');
     if (existing.length > 1) {
         flag(`活動名稱對到好幾個合作卡池（${existing.map((p) => p.pool).join('、')}），需要手動處理`);
         return none;
     }
+    const poolName = existing.length === 1 ? existing[0].pool : (sections.map((s) => s.gachaName).find(Boolean) || '');
+    const { names, notes } = cleanNames(applyOverrides(sections.flatMap((s) => s.star6), poolName), knownNames(poolsData));
+    // 名稱的提醒只在這期真的有變動時列出
+    const done = (data2, change) => {
+        if (change) notes.forEach(flag);
+        return result(data2, change, flags);
+    };
     if (existing.length === 1) {
         const target = existing[0];
         if (sameSet(names, target.chars)) return none;
@@ -312,7 +321,7 @@ function planLimitedList(poolsData, event, pool, rawNames) {
     const month = eventMonth(event.event);
     const raw = Array.isArray(poolsData.pools) ? poolsData.pools : [];
     const none = result(poolsData, null, flags);
-    const { names, notes } = cleanNames(rawNames, knownNames(poolsData));
+    const { names, notes } = cleanNames(applyOverrides(rawNames, pool), knownNames(poolsData));
     const done = (data2, change) => {
         if (change) notes.forEach(flag);
         return result(data2, change, flags);
@@ -454,7 +463,9 @@ function planOne(poolsData, item) {
 }
 
 // 好幾期活動依開始日由舊到新套用 (後面的期數會和前面剛加的版本比較)
-function planPoolChanges(poolsData, items) {
+//   nameOverrides：scraper/name-overrides.json 的內容 (選填)
+function planPoolChanges(poolsData, items, nameOverrides) {
+    overrides = { global: {}, pools: {}, ...(nameOverrides || {}) };
     let data = poolsData;
     const changes = [];
     const flags = [];

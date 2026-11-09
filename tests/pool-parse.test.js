@@ -232,3 +232,13 @@ test('合作祭典 (超獸神祭×作品A)：合作卡池和本家限定卡池�
     assert.deepEqual(noTable.changes.map((c) => c.type), ['update-collab']);
     assert.ok(noTable.flags.some((f) => /本家限定的部分需要手動處理/.test(f.message)));
 });
+
+test('名稱對應 (name-overrides.json)：全部卡池或只在某個卡池把公告寫法換成卡池寫法', () => {
+    const overrides = { global: { '角色 二': '角色二（正式）' }, pools: { '作品A': { '角色三': '角色三α' }, '別的卡池': { '角色一': 'X' } } };
+    const r = X.planPoolChanges(POOLS(), [item('2026-05月 作品A', '2026-05-10', 'collab', COLLAB)], overrides);
+    assert.deepEqual(r.data.pools[0].chars, ['角色二（正式）', '角色三α']);
+    // 規則檔本身的格式
+    const file = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'scraper', 'name-overrides.json'), 'utf8'));
+    assert.equal(typeof file.global, 'object');
+    assert.equal(typeof file.pools, 'object');
+});

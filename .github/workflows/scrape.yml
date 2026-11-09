@@ -95,7 +95,7 @@ jobs:
       - name: 卡池 PR
         env:
           GH_TOKEN: ${{ github.token }}
-        run: bash scraper/pool-pr.sh "$RUNNER_TEMP/pool-items.json" "卡池回補：${{ inputs.since }} 起的歷史公告"
+        run: bash scraper/pool-pr.sh "$RUNNER_TEMP/pool-items.json" "卡池回補：${{ inputs.since }} 起的歷史公告" replace
 
   fill-events:
     if: ${{ inputs.fill_events && !inputs.backfill }}
