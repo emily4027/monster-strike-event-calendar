@@ -201,9 +201,10 @@ function insertEntry(list, entry) {
     return next;
 }
 
-// 一期活動 → 卡池的變動。回傳 { data, change, flags }，data 是套用後的 pools.json 內容
+// 一期活動的其中一種卡池 (mode：collab 合作 / limited 本家限定) → 變動。
+// 回傳 { data, change, flags }，data 是套用後的 pools.json 內容
 //   item：{ event: { event, date, tag, source }, data: extractPoolData(...) }
-function planOne(poolsData, item) {
+function planPart(poolsData, item, mode) {
     const { event, data } = item;
     const flags = [];
     const flag = (message) => flags.push({ event: event.event, source: event.source, message });
@@ -213,7 +214,7 @@ function planOne(poolsData, item) {
     const known = knownNames(poolsData);
     const none = { data: poolsData, change: null, flags };
 
-    if (event.tag === 'collab') {
+    if (mode === 'collab') {
         const sections = data.collab
             .map((s) => ({ ...s, star6: s.rows.filter((r) => isStar6Base(r.rarity)).map((r) => r.name) }))
             .filter((s) => s.star6.length > 0);
@@ -325,6 +326,25 @@ function planOne(poolsData, item) {
     });
 }
 
+// 一期活動 → 卡池的變動 { data, changes, flags }
+//   合作活動：合作卡池；活動名稱也對到本家限定卡池時 (「超獸神祭×孤獨搖滾！」這種合作祭典)，
+//   再用同一篇公告的「「超獸神祭」限定角色」表更新本家限定卡池，兩種卡池分開
+function planOne(poolsData, item) {
+    const only = (r) => ({ data: r.data, changes: r.change ? [r.change] : [], flags: r.flags });
+    if (item.event.tag !== 'collab') return only(planPart(poolsData, item, 'limited'));
+    const collab = only(planPart(poolsData, item, 'collab'));
+    const limitedNames = [...new Set(matchingPools(readPools(collab.data), item.event.event)
+        .filter((p) => p.kind === 'limited').map((p) => p.pool))];
+    if (limitedNames.length === 0) return collab;
+    if (item.data.limited.length === 0) {
+        collab.flags.push({ event: item.event.event, source: item.event.source,
+            message: `活動名稱也對到本家限定卡池（${limitedNames.join('、')}），但公告裡沒有「「X」限定角色」的表，本家限定的部分需要手動處理` });
+        return collab;
+    }
+    const limited = only(planPart(collab.data, item, 'limited'));
+    return { data: limited.data, changes: [...collab.changes, ...limited.changes], flags: [...collab.flags, ...limited.flags] };
+}
+
 // 好幾期活動依開始日由舊到新套用 (後面的期數會和前面剛加的版本比較)
 function planPoolChanges(poolsData, items) {
     let data = poolsData;
@@ -333,7 +353,7 @@ function planPoolChanges(poolsData, items) {
     [...items].sort((a, b) => String(a.event.date).localeCompare(String(b.event.date))).forEach((item) => {
         const result = planOne(data, item);
         data = result.data;
-        if (result.change) changes.push(result.change);
+        changes.push(...result.changes);
         flags.push(...result.flags);
     });
     return { data, changes, flags };

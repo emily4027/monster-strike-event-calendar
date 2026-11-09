@@ -212,7 +212,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const found = poolsForEvent(pools, e.event);
         if (found.length === 0) {
             section.appendChild(el('p', 'text-muted small mb-0', pools.length
-                ? '沒有這個活動的卡池資料（常駐轉蛋、免費轉蛋，或還沒整理）。'
+                ? '沒有這期的卡池資料（常駐或免費轉蛋、官網沒有這期的公告，或還沒整理）。'
                 : '卡池資料讀取中...'));
             return section;
         }
@@ -226,7 +226,7 @@ document.addEventListener('DOMContentLoaded', () => {
         found.forEach((p) => {
             const block = el('div', 'pool-block');
             const head = el('div', 'pool-head');
-            head.appendChild(el('span', `pool-badge pool-${p.kind}`, p.kind === 'collab' ? '合作' : '限定'));
+            head.appendChild(el('span', `pool-badge pool-${p.kind}`, p.kind === 'collab' ? '合作限定' : '本家限定'));
             head.appendChild(el('span', 'pool-name', p.pool));
             block.appendChild(head);
             const chips = el('div', 'pool-chars');

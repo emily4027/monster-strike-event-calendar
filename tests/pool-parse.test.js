@@ -165,3 +165,16 @@ test('pools.json 重新輸出和原本的檔案一字不差 (一個卡池一行)
     const text = fs.readFileSync(file, 'utf8').replace(/\r\n/g, '\n');
     assert.equal(X.formatPoolsJson(JSON.parse(text)), text);
 });
+
+test('合作祭典 (超獸神祭×作品A)：合作卡池和本家限定卡池分開更新；沒有限定表時標出來', () => {
+    const limitedTable = `<table><tbody><tr><th>「綠色幻想」限定角色</th></tr><tr><td>三日月宗近　西施</td></tr></tbody></table>`;
+    const combo = COLLAB + limitedTable;
+    const r = X.planPoolChanges(POOLS(), [item('2026-05月 綠色幻想×作品A', '2026-05-10', 'collab', combo)]);
+    assert.deepEqual(r.changes.map((c) => [c.type, c.pool]), [['update-collab', '作品A'], ['add-version', '綠色幻想']]);
+    const limited = r.data.pools.find((p) => p.pool === '綠色幻想' && p.months && p.months.includes('2026-05'));
+    assert.deepEqual(limited.chars, ['三日月宗近', '西施']);
+
+    const noTable = X.planPoolChanges(POOLS(), [item('2026-05月 綠色幻想×作品A', '2026-05-10', 'collab', COLLAB)]);
+    assert.deepEqual(noTable.changes.map((c) => c.type), ['update-collab']);
+    assert.ok(noTable.flags.some((f) => /本家限定的部分需要手動處理/.test(f.message)));
+});
