@@ -1,7 +1,7 @@
 {
-  "name": "monster-strike-event-calendar-scraper",
+  "name": "monster-strike-gacha-data-scraper",
   "private": true,
-  "description": "每天抓怪物彈珠官網的轉蛋公告，新增到 Firestore 活動清單",
+  "description": "每天抓怪物彈珠官網的轉蛋公告，新增到 Firestore 活動清單，並整理卡池開 PR",
   "scripts": {
     "scrape": "node scrape.js",
     "dry-run": "node scrape.js --dry-run"

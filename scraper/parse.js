@@ -87,21 +87,27 @@ function findPeriod(lines) {
     return null;
 }
 
-const quoted = (s) => [...String(s).matchAll(/「([^「」]+)」/g)].map((m) => m[1].trim()).filter(Boolean);
+// 「★5或以上角色的出現機率」這種不是轉蛋名稱
+const NOT_GACHA_NAME_RE = /機率|★|[%％]/;
+const quoted = (s) => [...String(s).matchAll(/「([^「」]+)」/g)].map((m) => m[1].trim())
+    .filter((x) => x && !NOT_GACHA_NAME_RE.test(x));
+// 標題只寫「超獸神祭」、內文沒有「轉蛋」字樣的祭典公告
+const FESTIVAL_NAME_RE = /祭$|^(?:MIDNIGHT PARTY|STARLIGHT MIRAGE|綠色幻想|水之遊宴|火焰之星)$/i;
 
 // 轉蛋名稱：
 //   1. 標題裡「X」，而且內文有「X」轉蛋 或 轉蛋「X…」 (彩獸神祭、銀河冒險 II…；標題前面的角色名不會被選到。
 //      內文寫 轉蛋「超獸神祭 -特別版-」時，用標題的「超獸神祭」)
 //   2. 內文的 轉蛋「X」 (合作活動常見的寫法：轉蛋「藍色監獄」)
 //   3. 內文的「X」轉蛋活動
+//   4. 標題裡的祭典名稱 (「超獸神祭」「激獸神祭」「MIDNIGHT PARTY」…)
 function findGachaName(title, text) {
     const fromTitle = quoted(title).find((x) => text.includes(`「${x}」轉蛋`) || text.includes(`轉蛋「${x}`));
     if (fromTitle) return fromTitle;
-    const m2 = text.match(/轉蛋「([^「」]+)」/);
-    if (m2) return m2[1].trim();
-    const m3 = text.match(/「([^「」]+)」轉蛋活動/);
-    if (m3) return m3[1].trim();
-    return null;
+    const m2 = [...text.matchAll(/轉蛋「([^「」]+)」/g)].map((m) => m[1].trim()).find((x) => !NOT_GACHA_NAME_RE.test(x));
+    if (m2) return m2;
+    const m3 = [...text.matchAll(/「([^「」]+)」轉蛋活動/g)].map((m) => m[1].trim()).find((x) => !NOT_GACHA_NAME_RE.test(x));
+    if (m3) return m3;
+    return quoted(title).find((x) => FESTIVAL_NAME_RE.test(x)) || null;
 }
 
 const COLLAB_RE = /×\s*怪物彈珠|怪物彈珠\s*×|合作/;
@@ -134,9 +140,11 @@ function parseArticle(html, url, listTitle = '') {
 
 // ---- 合併到活動清單 ----
 // 比對用的名稱：去掉「YYYY-MM月」、括號、空白與標點，英文轉小寫，全形英數轉半形
+const CHINESE_DIGITS = { 一: '1', 二: '2', 三: '3', 四: '4', 五: '5', 六: '6', 七: '7', 八: '8', 九: '9' };
 function matchKey(name) {
     return String(name)
         .replace(/^\d{4}[-年/]\d{1,2}月?\s*/, '')
+        .replace(/第([一二三四五六七八九])彈/g, (m, d) => `第${CHINESE_DIGITS[d]}彈`)
         .normalize('NFKC')
         .toLowerCase()
         .replace(/[\s「」『』《》【】()（）・･\-‐－—~〜～!！?？.,，、:：]/g, '');

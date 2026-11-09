@@ -4,6 +4,7 @@
     --bs-body-bg: transparent;
     --primary-color: #333;
     --accent: #ef6c00;
+    --accent-dark: #d45f00;
     --accent-light: #fff3e0;
     --card-bg: rgba(255, 255, 255, 0.95);
     --card-shadow: 0 8px 20px rgba(0, 0, 0, 0.05);
@@ -45,6 +46,11 @@ body {
     font-size: 2.2rem;
     margin-top: 10px;
 }
+.app-subtitle {
+    color: #6c757d;
+    font-size: 0.9rem;
+    margin-bottom: 10px;
+}
 .icon-badge {
     font-size: 2rem;
     background: var(--accent);
@@ -76,6 +82,7 @@ body {
     flex-shrink: 0;
 }
 .status-online { background-color: #28a745; box-shadow: 0 0 5px #28a745; }
+.status-saving { background-color: #ffc107; box-shadow: 0 0 5px #ffc107; }
 .status-offline { background-color: #6c757d; }
 
 #auth-container {
@@ -84,7 +91,8 @@ body {
     align-items: center;
     min-height: 40px;
 }
-#user-info {
+#user-info:not([hidden]) {
+    display: flex;
     align-items: center;
     gap: 10px;
     background: white;
@@ -92,7 +100,7 @@ body {
     border-radius: 25px;
     box-shadow: 0 2px 8px rgba(0, 0, 0, 0.08);
 }
-.auth-btn.login {
+.auth-btn.login:not([hidden]) {
     border: none;
     background-color: white;
     color: #333;
@@ -109,6 +117,26 @@ body {
     transform: translateY(-2px);
     box-shadow: 0 4px 10px rgba(0, 0, 0, 0.15);
 }
+
+/* --- 頁面分頁 (行事曆 / 角色) --- */
+.page-tabs {
+    display: flex;
+    justify-content: center;
+    gap: 8px;
+    margin-bottom: 16px;
+}
+.page-tab {
+    padding: 8px 20px;
+    border-radius: 25px;
+    background: white;
+    color: var(--primary-color);
+    text-decoration: none;
+    font-weight: 600;
+    box-shadow: 0 2px 5px rgba(0, 0, 0, 0.08);
+    transition: background-color 0.2s;
+}
+.page-tab:hover { background: var(--accent-light); color: var(--accent-dark); }
+.page-tab.active { background: var(--accent); color: white; }
 
 /* --- 卡片 --- */
 .section-card {
@@ -157,11 +185,11 @@ body {
 .records-source { margin-left: auto; color: #888; }
 
 /* --- 標籤顏色 --- */
-.tag-honke { background-color: var(--tag-honke); color: #fff; }
-.tag-collab { background-color: var(--tag-collab); color: #fff; }
-.tag-free { background-color: var(--tag-free); color: #fff; }
-.tag-orb { background-color: var(--tag-orb); color: #333; }
-.tag-none { background-color: var(--tag-none); color: #fff; }
+.tag-honke { --tag-color: var(--tag-honke); background-color: var(--tag-honke); color: #fff; }
+.tag-collab { --tag-color: var(--tag-collab); background-color: var(--tag-collab); color: #fff; }
+.tag-free { --tag-color: var(--tag-free); background-color: var(--tag-free); color: #fff; }
+.tag-orb { --tag-color: var(--tag-orb); background-color: var(--tag-orb); color: #333; }
+.tag-none { --tag-color: var(--tag-none); background-color: var(--tag-none); color: #fff; }
 
 /* --- 月曆格 (桌機) --- */
 .calendar-grid {
@@ -244,14 +272,14 @@ body {
 .event-bar.single-day.tag-orb { border-left-color: var(--tag-orb); }
 
 /* --- 清單 (手機) --- */
-.event-list {
+.month-list {
     display: none;
     list-style: none;
     padding: 0;
     margin: 0;
 }
-.event-list li + li { margin-top: 8px; }
-.event-list-item {
+.month-list li + li { margin-top: 8px; }
+.month-list-item {
     width: 100%;
     display: flex;
     align-items: center;
@@ -264,14 +292,14 @@ body {
     border-radius: 10px;
     padding: 10px 12px;
 }
-.event-list-item.tag-honke { border-left-color: var(--tag-honke); }
-.event-list-item.tag-collab { border-left-color: var(--tag-collab); }
-.event-list-item.tag-free { border-left-color: var(--tag-free); }
-.event-list-item.tag-orb { border-left-color: var(--tag-orb); }
-.event-list-main { display: flex; flex-direction: column; min-width: 0; flex: 1; }
-.event-list-name { font-weight: 600; overflow-wrap: anywhere; }
-.event-list-meta { font-size: 0.8rem; color: #777; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
-.event-list-pulls { font-weight: 700; color: var(--accent); white-space: nowrap; }
+.month-list-item.tag-honke { border-left-color: var(--tag-honke); }
+.month-list-item.tag-collab { border-left-color: var(--tag-collab); }
+.month-list-item.tag-free { border-left-color: var(--tag-free); }
+.month-list-item.tag-orb { border-left-color: var(--tag-orb); }
+.month-list-main { display: flex; flex-direction: column; min-width: 0; flex: 1; }
+.month-list-name { font-weight: 600; overflow-wrap: anywhere; }
+.month-list-meta { font-size: 0.8rem; color: #777; display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.month-list-pulls { font-weight: 700; color: var(--accent); white-space: nowrap; }
 .badge-ongoing {
     background: var(--accent);
     color: #fff;
@@ -279,13 +307,13 @@ body {
     padding: 0 7px;
     font-size: 0.7rem;
 }
-.event-list-empty { color: #888; text-align: center; padding: 24px 0; }
+.month-list-empty { color: #888; text-align: center; padding: 24px 0; }
 
 @media (max-width: 767.98px) {
     .app-header h1 { font-size: 1.6rem; }
     .section-card { padding: 14px; }
     .calendar-grid { display: none; }
-    .event-list { display: block; }
+    .month-list { display: block; }
     .calendar-toolbar { justify-content: center; }
     .month-title { min-width: 0; font-size: 1.2rem; }
     .toolbar-filters { width: 100%; }
@@ -310,6 +338,47 @@ body {
 .tag-chip { border-radius: 10px; padding: 1px 10px; font-size: 0.85rem; }
 .pulls-table .notes-cell { overflow-wrap: anywhere; }
 .pulls-table .total-row td { font-weight: 700; border-bottom: none; }
+
+/* 這期卡池 */
+.pool-block + .pool-block { margin-top: 10px; }
+.pool-head { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; }
+.pool-name { font-weight: 600; overflow-wrap: anywhere; }
+.pool-badge {
+    font-size: 0.75rem;
+    border-radius: 6px;
+    padding: 2px 8px;
+    overflow-wrap: anywhere;
+}
+.pool-limited { background: #fde7ef; color: #ad1457; }
+.pool-collab { background: #e3f2fd; color: #1565c0; }
+.pool-chars { display: flex; flex-wrap: wrap; gap: 6px; }
+.pool-char {
+    font-size: 0.85rem;
+    border: 1px solid var(--grid-line);
+    border-radius: 14px;
+    padding: 2px 10px;
+    color: #555;
+    text-decoration: none;
+    background: #fff;
+    overflow-wrap: anywhere;
+}
+.pool-char:hover { border-color: var(--accent); color: var(--accent-dark); }
+.pool-char.got {
+    background: var(--accent-light);
+    border-color: var(--accent);
+    color: var(--accent-dark);
+    font-weight: 700;
+}
+
+/* --- 頁尾 (版權註記) --- */
+.site-footer {
+    text-align: center;
+    color: #6c757d;
+    font-size: 0.8rem;
+    margin-top: 30px;
+}
+.site-footer p { margin-bottom: 4px; }
+.site-footer a { color: inherit; }
 
 /* --- 懸浮工具箱菜單 (和其他工具相同) --- */
 .toolbox-menu-wrapper {
@@ -377,7 +446,7 @@ body {
 .toolbox-item:first-child { border-top-left-radius: 12px; border-top-right-radius: 12px; }
 .toolbox-item:last-child { border-bottom: none; }
 .toolbox-item.active { background-color: var(--accent); color: white; font-weight: 700; }
-.toolbox-item.active:hover { background-color: #d45f00; color: white; }
+.toolbox-item.active:hover { background-color: var(--accent-dark); color: white; }
 
 /* --- Toast --- */
 #toast-message {

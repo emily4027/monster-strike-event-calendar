@@ -1,2 +1,4 @@
 node_modules/
 .claude/
+scraper/pool-items.json
+scraper/pool-report.md

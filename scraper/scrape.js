@@ -1,8 +1,10 @@
 // 抓官網公告裡的轉蛋活動，新增到 Firestore 的 shared/events (抽卡統計和行事曆共用的活動清單)。
+// 同時把公告裡的卡池角色存成 --pool-items 指定的檔案，之後由 apply-pools.js 開 PR 更新 pools.json。
 //
 // 執行：
 //   node scraper/scrape.js            正式執行，需要環境變數 FIREBASE_SERVICE_ACCOUNT (service account 金鑰 JSON)
 //   node scraper/scrape.js --dry-run  只顯示會新增什麼，不寫入；活動清單改讀抽卡統計網站上的 events.json
+//   加上 --pool-items <檔案>         把這次讀到的卡池資料存成檔案 (給 apply-pools.js 用)
 //
 // GitHub Actions 每天台灣時間中午 12:00 執行 (見 .github/workflows/scrape.yml)。
 'use strict';
@@ -10,13 +12,14 @@
 const fs = require('fs');
 const path = require('path');
 const { SITE, parseNewsList, parseArticle, mergeEvents } = require('./parse.js');
+const { extractPoolData } = require('./pool-parse.js');
 
 const NEWS_URL = `${SITE}/news/`;
 const FALLBACK_EVENTS_URL = 'https://emily4027.github.io/monster-strike-gacha/events.json';
 const LOG_FILE = path.join(__dirname, 'log.md');
 // 處理過的轉蛋公告網址。活動被管理員刪掉後，公告還在列表上也不會再加回去
 const SEEN_FILE = path.join(__dirname, 'seen.json');
-const USER_AGENT = 'monster-strike-event-calendar-bot (+https://github.com/emily4027/monster-strike-event-calendar)';
+const USER_AGENT = 'monster-strike-gacha-data-bot (+https://github.com/emily4027/monster-strike-gacha-data)';
 const REQUEST_DELAY_MS = 1000;   // 每篇公告間隔，避免對官網送太多請求
 const TAG_LABELS = { honke: '本家', collab: '合作', free: '免費', orb: '寶珠' };
 
@@ -42,7 +45,7 @@ async function fetchText(url) {
     return response.text();
 }
 
-// 抓列表上還沒處理過的公告，回傳解析出的轉蛋活動
+// 抓列表上還沒處理過的公告，回傳解析出的轉蛋活動 (poolData：公告裡的卡池角色，見 pool-parse.js)
 async function scrapeGachaEvents(knownSources) {
     const items = parseNewsList(await fetchText(NEWS_URL));
     // 一篇都讀不到 = 官網版面改了，讓 workflow 失敗，GitHub 會寄信通知
@@ -52,8 +55,9 @@ async function scrapeGachaEvents(knownSources) {
     for (const item of items) {
         if (knownSources.has(item.url)) continue;
         try {
-            const event = parseArticle(await fetchText(item.url), item.url, item.title);
-            if (event) found.push(event);
+            const html = await fetchText(item.url);
+            const event = parseArticle(html, item.url, item.title);
+            if (event) found.push({ ...event, poolData: extractPoolData(html) });
         } catch (error) {
             console.warn(`[略過] ${item.url}：${error.message}`);
         }
@@ -73,6 +77,18 @@ function printResult({ added, updated }) {
 }
 
 // 有變動時記到 scraper/log.md (新的在上面)；workflow 會 commit 這個檔案
+// 卡池資料：用活動清單裡的名稱和標籤 (公告和既有活動視為同一場時，以清單為準)
+function savePoolItems(scraped, events) {
+    const index = process.argv.indexOf('--pool-items');
+    if (index === -1 || !process.argv[index + 1]) return;
+    const items = scraped.map((s) => {
+        const match = events.find((e) => e.source === s.source) || s;
+        return { event: { event: match.event, date: match.date, tag: match.tag, source: s.source }, data: s.poolData };
+    });
+    fs.writeFileSync(process.argv[index + 1], JSON.stringify({ items }, null, 2));
+    console.log(`卡池資料 ${items.length} 篇存到 ${process.argv[index + 1]}`);
+}
+
 function appendLog({ added, updated }) {
     if (!added.length && !updated.length) return;
     const lines = [`## ${taipeiDate()}`, ''];
@@ -88,7 +104,9 @@ async function dryRun() {
     const existing = JSON.parse(await fetchText(FALLBACK_EVENTS_URL));
     console.log(`[試跑] 活動清單讀抽卡統計的 events.json（${existing.length} 筆），不會寫入任何地方`);
     const scraped = await scrapeGachaEvents(new Set([...readSeen(), ...existing.map((e) => e.source).filter(Boolean)]));
-    printResult(mergeEvents(existing, scraped));
+    const merged = mergeEvents(existing, scraped);
+    printResult(merged);
+    savePoolItems(scraped, merged.events);
 }
 
 async function run() {
@@ -119,6 +137,7 @@ async function run() {
     printResult(result);
     appendLog(result);
     saveSeen(seen, scraped);
+    savePoolItems(scraped, result.events);
 }
 
 const main = process.argv.includes('--dry-run') ? dryRun : run;

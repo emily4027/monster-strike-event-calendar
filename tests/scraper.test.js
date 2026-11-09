@@ -121,3 +121,17 @@ test('比對名稱：同一天、名稱互相包含', () => {
     assert.ok(P.sameEvent({ event: '2026-10月 《Re:從零開始的異世界生活》第2彈', date: '2026-10-01' }, { event: '2026-10月 Re：從零開始的異世界生活', date: '2026-10-01' }));
     assert.ok(!P.sameEvent({ event: '2026-11月 藍色監獄', date: '2026-11-02' }, { event: '2026-11月 藍色監獄', date: '2026-11-03' }));
 });
+
+test('轉蛋名稱：標題只有祭典名稱的公告、機率說明不是名稱', () => {
+    const lines = ['▼活動期間：', '2023年10月30日（一）12:00～11月3日（五）11:59', '「超獸神祭」限定角色登場'];
+    const html = lines.map((l) => `<p>${l}</p>`).join('');
+    const a = P.parseArticle(html, 'https://www.monster-strike.com.tw/news/x.html', '充填魔力實現純白心願！　10月30日「超獸神祭」全新限定震撼登場');
+    assert.equal(a.event, '2023-10月 超獸神祭');
+    const b = P.parseArticle(html.replace('「超獸神祭」限定角色登場', '初次單抽・10連轉蛋「★5或以上角色的出現機率」24％！'),
+        'https://www.monster-strike.com.tw/news/y.html', '初次單抽・10連轉蛋「★5或以上角色的出現機率」24％！　「MIDNIGHT PARTY」4月21日隆重登場');
+    assert.equal(b.event, '2023-10月 MIDNIGHT PARTY');
+});
+
+test('比對名稱：第二彈和第2彈視為相同', () => {
+    assert.equal(P.matchKey('2026-01月 葬送的芙莉蓮第二彈'), P.matchKey('2026-01月 葬送的芙莉蓮第2彈'));
+});
