@@ -27,6 +27,7 @@
     //           沒有那個月的版本時不顯示這個卡池 (寧可沒有，也不要顯示錯的)。
     //           沒有 months 的是預設版本 (官網限定角色名單)，只用來標出角色屬於哪個限定卡池。
     //           舊格式的 since ("YYYY-MM") 當成 months: [since] 讀
+    //   variant：選填。同一個月有兩個名單不同的同名轉蛋時，活動名稱含有這段文字的才用這個版本
     const MONTH_RE = /^\d{4}-\d{2}$/;
     function readMonths(p) {
         const list = Array.isArray(p.months) ? p.months : (typeof p.since === 'string' ? [p.since] : []);
@@ -44,6 +45,7 @@
                     .map((m) => String(m).split('+').map(poolKey).filter(Boolean))
                     .filter((parts) => parts.length > 0),
                 months: readMonths(p),
+                variant: typeof p.variant === 'string' ? p.variant.trim() : '',
                 chars: p.chars.filter((c) => typeof c === 'string' && c.trim()).map((c) => c.trim())
             }));
     }
@@ -61,6 +63,18 @@
         return pools.filter((p) => p.match.some((parts) => parts.every((part) => key.includes(part))));
     }
 
+    // 限定卡池在這個月、這場活動要用的版本 (沒有時回傳 null)
+    //   同一個月有兩個名單不同的同名轉蛋時 (一般的激獸神祭和「怪物彈珠動畫 特別版！激獸神祭」)，
+    //   其中一個版本會有 variant：活動名稱含有 variant 的用那個版本，其他活動用沒有 variant 的版本
+    function limitedVersion(pools, pool, month, eventName) {
+        if (!month) return null;
+        const key = poolKey(eventName);
+        const versions = pools.filter((v) => v.pool === pool && v.kind === 'limited' && v.months.includes(month));
+        const special = versions.filter((v) => v.variant && key.includes(poolKey(v.variant)))
+            .sort((a, b) => b.variant.length - a.variant.length)[0];
+        return special || versions.find((v) => !v.variant) || null;
+    }
+
     // 活動名稱 → 這期的卡池 (合作在前，同類依 pools.json 的順序)
     //   合作卡池：match 本身帶年月，對到就算
     //   限定卡池：只用 months 含有活動年月的版本 (見 readPools 的說明)
@@ -71,8 +85,7 @@
         const seen = new Set();
         matchingPools(pools, eventName).forEach((p) => {
             if (seen.has(p.kind + '\u0000' + p.pool)) return;
-            const use = p.kind === 'collab' ? p
-                : (month ? pools.find((v) => v.pool === p.pool && v.kind === 'limited' && v.months.includes(month)) : null);
+            const use = p.kind === 'collab' ? p : limitedVersion(pools, p.pool, month, eventName);
             if (!use) return;
             seen.add(p.kind + '\u0000' + p.pool);
             found.push(use);

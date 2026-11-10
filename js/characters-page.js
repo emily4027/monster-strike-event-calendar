@@ -178,9 +178,10 @@ document.addEventListener('DOMContentLoaded', () => {
     function renderPoolOptions() {
         const current = els.pool.value;
         els.pool.querySelectorAll('option[data-pool]').forEach((o) => o.remove());
-        pools.filter((p) => p.kind === 'limited').forEach((p) => {
-            const opt = el('option', '', `限定：${p.pool}`);
-            opt.value = 'pool:' + p.pool;
+        // 同一個卡池有好幾期的版本，選單裡只列一次
+        [...new Set(pools.filter((p) => p.kind === 'limited').map((p) => p.pool))].forEach((name) => {
+            const opt = el('option', '', `限定：${name}`);
+            opt.value = 'pool:' + name;
             opt.dataset.pool = '1';
             els.pool.appendChild(opt);
         });

@@ -49,7 +49,8 @@ function splitNameCell(html) {
 }
 
 // ---- 解析公告 ----
-const LIMITED_HEADER_RE = /^(?:「([^「」]+)」(?:期間)?限定角色|轉出對象(?:期間)?限定角色)$/;
+// 「「彩獸神祭」限定角色」「轉出對象限定角色」「轉出對象期間限定角色」「轉出對象的激獸神祭限定角色：」「轉出對象的期間限定角色」
+const LIMITED_HEADER_RE = /^(?:「([^「」]+)」|轉出對象的?([^「」：:]*?))(?:期間)?限定角色[：:]?$/;
 const ELEMENT_HEADER_RE = /^([火水木光闇])屬性$/;
 
 // 限定角色表：
@@ -68,7 +69,7 @@ function parseLimitedTables(html) {
                 const m = header.match(LIMITED_HEADER_RE);
                 const e = header.match(ELEMENT_HEADER_RE);
                 if (m) {
-                    current = { header, poolName: m[1] ? m[1].trim() : '', names: [] };
+                    current = { header, poolName: (m[1] || m[2] || '').trim(), names: [] };
                     limited.push(current);
                 } else if (e) {
                     elements[e[1]] = elements[e[1]] || [];
@@ -334,12 +335,28 @@ function planLimitedList(poolsData, event, pool, rawNames) {
         return done({ ...poolsData, pools: insertEntry(raw, entry) },
             { type: 'new-limited', pool, month, event: event.event, source: event.source, chars: names, added: names, removed: [] });
     }
-    const own = versions.find(([p]) => rawMonths(p).includes(month));
+    // 這個月已經有版本：這場活動會用到的那個 (名稱含有 variant 的版本優先，其次是沒有 variant 的)
+    const inMonth = versions.filter(([p]) => rawMonths(p).includes(month));
+    const eventKey = poolKey(event.event);
+    const own = inMonth.filter(([p]) => p.variant && eventKey.includes(poolKey(p.variant)))
+        .sort(([a], [b]) => b.variant.length - a.variant.length)[0] || inMonth.find(([p]) => !p.variant);
     if (own) {
         if (sameSet(names, own[0].chars)) return none;
         const d = diffNames(names, own[0].chars);
-        flag(`「${pool}」${month} 已經有一個版本，這期公告的名單不同（多了：${d.added.join('、') || '無'}；少了：${d.removed.join('、') || '無'}），需要手動處理`);
-        return none;
+        // 活動清單沒有的祭典：先到的那期為準，不處理
+        if (event.unlogged) return none;
+        const variant = event.event.replace(/^\d{4}-\d{1,2}月\s*/, '').trim();
+        // 已經是 variant 版本、或活動名稱就只是卡池名稱 (分不出是哪一個轉蛋) → 只標出來
+        if (own[0].variant || poolKey(variant) === poolKey(pool)) {
+            flag(`「${pool}」${month}${own[0].variant ? `（${own[0].variant}）` : ''} 已經有一個版本，這期公告的名單不同（多了：${d.added.join('、') || '無'}；少了：${d.removed.join('、') || '無'}），需要手動處理`);
+            return none;
+        }
+        // 同一個月有另一個名單不同的同名轉蛋：這期另外一個版本，只用在名稱含有 variant 的活動
+        const template = raw.find((p) => p.pool === pool && p.kind === 'limited' && Array.isArray(p.match));
+        const entry = { pool, kind: 'limited', ...(template ? { match: template.match } : {}), months: [month], variant, source: event.source, chars: names };
+        flag(`「${pool}」${month} 有兩個名單不同的轉蛋，這期的名單另外存成一個版本，只用在名稱含有「${variant}」的活動（活動改名時要一起改 pools.json 的 variant）`);
+        return done({ ...poolsData, pools: insertEntry(raw, entry) },
+            { type: 'add-version', pool, month, event: event.event, source: event.source, chars: names, ...d, previous: `同月的另一期` });
     }
     // 和前一期的名單比較 (報告用)：月份比這期早的最後一個版本，沒有時用預設版本
     const earlier = latestBefore(versions, month);
@@ -348,7 +365,7 @@ function planLimitedList(poolsData, event, pool, rawNames) {
     const diff = previous ? diffNames(names, previous[0].chars) : { added: names, removed: [] };
 
     // 名單和某一期相同 → 把這個月加進那個版本
-    const same = versions.find(([p]) => rawMonths(p).length > 0 && sameSet(names, p.chars));
+    const same = versions.find(([p]) => rawMonths(p).length > 0 && !p.variant && sameSet(names, p.chars));
     if (same) {
         return done(addMonth(poolsData, same[1], month),
             { type: 'add-month', pool, month, event: event.event, source: event.source, chars: names, added: [], removed: [], previous: rawMonths(same[0]).join('、') });

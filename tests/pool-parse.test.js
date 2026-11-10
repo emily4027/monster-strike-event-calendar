@@ -242,3 +242,30 @@ test('名稱對應 (name-overrides.json)：全部卡池或只在某個卡池把�
     assert.equal(typeof file.global, 'object');
     assert.equal(typeof file.pools, 'object');
 });
+
+test('限定角色表的表頭：「轉出對象的激獸神祭限定角色：」「轉出對象的期間限定角色」也認得', () => {
+    const html = '<table><tbody><tr><th>轉出對象的激獸神祭限定角色：</th></tr><tr><td>浮士德　基度山　<br>壽限無</td></tr>'
+        + '<tr><th>轉出對象的期間限定角色</th></tr><tr><td>正宗：使命的劍士 MV　天命的統率者 麒麟兒 MV</td></tr></tbody></table>';
+    assert.deepEqual(X.parseLimitedLists(html).map((l) => [l.poolName, l.names]), [
+        ['激獸神祭', ['浮士德', '基度山', '壽限無']],
+        ['', ['正宗：使命的劍士 MV', '天命的統率者 麒麟兒 MV']]
+    ]);
+});
+
+test('同一個月有兩個名單不同的同名轉蛋：後到的 (活動清單裡的) 另存 variant 版本，各用各的', () => {
+    const { readPools, poolsForEvent } = require('../pools.js');
+    const special = FESTIVAL.replace('　新角色甲', '　新角色甲　特別版角色');
+    const r = X.planPoolChanges(POOLS(), [item('2026-11月 動畫特別版！綠色幻想', '2026-11-20', 'honke', special)]);
+    assert.equal(r.changes.length, 1);
+    const v = r.data.pools.find((p) => p.variant);
+    assert.equal(v.variant, '動畫特別版！綠色幻想');
+    assert.deepEqual(v.months, ['2026-11']);
+    const pools = readPools(r.data);
+    const charsOf = (e) => poolsForEvent(pools, e)[0].chars;
+    assert.ok(charsOf('2026-11月 動畫特別版！綠色幻想').includes('特別版角色'));
+    assert.ok(!charsOf('2026-11月 綠色幻想').includes('特別版角色'));
+    // 活動清單沒有的祭典遇到同月不同名單：不處理
+    const unlogged = item('2026-11月 綠色幻想', '2026-11-25', 'honke', special);
+    unlogged.event.unlogged = true;
+    assert.equal(X.planPoolChanges(POOLS(), [unlogged]).changes.length, 0);
+});
