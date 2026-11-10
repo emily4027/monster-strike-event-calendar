@@ -7,7 +7,7 @@ const { poolKey, readPools, eventMonth, matchingPools, poolsForEvent, buildLimit
 
 const POOLS = readPools(JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'pools.json'), 'utf8')));
 // 活動名稱對到哪些卡池 (不管有沒有那個月的版本)
-const namesFor = (event) => [...new Set(matchingPools(POOLS, event).map((p) => p.pool))];
+const namesFor = (event) => [...new Set(matchingPools(POOLS, event).filter((p) => !p.rerun).map((p) => p.pool))];
 
 test('比對鍵：忽略空白、間隔號、全形半形、大小寫、結尾標點', () => {
     assert.equal(poolKey('彩・獸神祭'), poolKey('彩獸神祭'));

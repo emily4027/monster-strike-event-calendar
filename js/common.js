@@ -16,6 +16,8 @@
     const ADMINS_COLLECTION = 'admins';                     // admins/{uid} 存在即為管理員 (和抽卡統計共用)
     const GACHA_LOCAL_KEY = 'gachaRecords';                 // 抽卡統計的本機紀錄 (同網域共用)
     const POOLS_URL = 'pools.json';
+    const ELEMENTS_URL = 'elements.json';                   // 角色名稱 → 屬性 (名稱上色用)
+    const ELEMENT_CLASS = { '火': 'el-fire', '水': 'el-water', '木': 'el-wood', '光': 'el-light', '闇': 'el-dark' };
 
     const TOOLBOX_TOOLS_URL = 'https://emily4027.github.io/monster-strike-toolbox/tools.js';
     const THIS_TOOL = {
@@ -107,6 +109,20 @@
         } catch (e) {
             console.warn('[DATA] 讀不到 pools.json', e);
             return [];
+        }
+    }
+
+    // 屬性表 → 查詢函式：角色名稱 → CSS class (el-fire…)，不知道屬性時回傳空字串 (照一般顏色顯示)
+    //   比對時忽略空白、間隔號、全形半形 (和卡池相同)
+    async function loadElementClasses() {
+        const { poolKey } = root.CharacterPools;
+        try {
+            const data = await fetchJson(ELEMENTS_URL);
+            const map = new Map(Object.entries((data && data.elements) || {}).map(([name, e]) => [poolKey(name), ELEMENT_CLASS[e] || '']));
+            return (name) => map.get(poolKey(name)) || '';
+        } catch (e) {
+            console.warn('[DATA] 讀不到 elements.json，角色名稱不上色', e);
+            return () => '';
         }
     }
 
@@ -235,7 +251,7 @@
     root.Shared = {
         GACHA_LOCAL_KEY, THIS_TOOL,
         el, storage, waitForFirebase,
-        loadEvents, readLocalRecords, readCloudRecords, loadPools, loadNameFixes, saveNameFix, checkAdmin,
+        loadEvents, readLocalRecords, readCloudRecords, loadPools, loadElementClasses, loadNameFixes, saveNameFix, checkAdmin,
         setStatus, initAuth, loadToolboxMenu
     };
 })(this);

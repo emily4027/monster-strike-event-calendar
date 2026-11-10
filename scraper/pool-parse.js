@@ -48,6 +48,73 @@ function splitNameCell(html) {
         .filter(Boolean);
 }
 
+// ---- 屬性 ----
+// 文字顏色 → 屬性 (官網的限定角色名單用顏色標屬性：紅=火、藍=水、綠=木、橘黃=光、紫=闇)；灰、黑、白不算
+function colorElement(color) {
+    const c = String(color || '').trim().toLowerCase();
+    let rgb = null;
+    const m = c.match(/^rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/);
+    const h6 = c.match(/^#([0-9a-f]{6})$/);
+    const h3 = c.match(/^#([0-9a-f]{3})$/);
+    if (m) rgb = [Number(m[1]), Number(m[2]), Number(m[3])];
+    else if (h6) rgb = [0, 2, 4].map((i) => parseInt(h6[1].slice(i, i + 2), 16));
+    else if (h3) rgb = [...h3[1]].map((x) => parseInt(x + x, 16));
+    if (!rgb) return '';
+    const [r, g, b] = rgb.map((v) => v / 255);
+    const max = Math.max(r, g, b);
+    const min = Math.min(r, g, b);
+    if (max - min < 0.2) return '';
+    const d = max - min;
+    let hue = max === r ? ((g - b) / d) % 6 : max === g ? (b - r) / d + 2 : (r - g) / d + 4;
+    hue = (hue * 60 + 360) % 360;
+    if (hue < 20 || hue >= 335) return '火';
+    if (hue < 70) return '光';
+    if (hue < 170) return '木';
+    if (hue < 262) return '水';
+    return '闇';
+}
+
+// 一格角色名單 → { 名稱: 屬性 } (依每個名稱第一個字的文字顏色)
+function cellElements(html) {
+    const chars = [];
+    const stack = [];
+    const re = /<br\s*\/?>|<(\/?)([a-z0-9]+)\b([^>]*)>|([^<]+)/gi;
+    let m;
+    while ((m = re.exec(String(html)))) {
+        if (m[0].toLowerCase().startsWith('<br')) { chars.push({ ch: BR, color: '' }); continue; }
+        if (m[2]) {
+            if (m[1]) stack.pop();
+            else if (!/\/\s*$/.test(m[3])) {
+                const color = (m[3].match(/color\s*[:=]\s*["']?\s*(#[0-9a-f]{3,6}|rgba?\([^)]*\))/i) || [])[1] || '';
+                stack.push(color || (stack.length ? stack[stack.length - 1] : ''));
+            }
+            continue;
+        }
+        const color = stack.length ? stack[stack.length - 1] : '';
+        [...decodeEntities(m[4]).replace(/\u00a0/g, ' ')].forEach((ch) => chars.push({ ch, color }));
+    }
+    const text = chars.map((c) => c.ch).join('');
+    const wide = /[\u3000\u0001]/.test(text);
+    const isSep = (ch) => (wide ? ch === '\u3000' || ch === BR : /\s/.test(ch));
+    const out = {};
+    let name = '';
+    let color = '';
+    const flush = () => {
+        const n = name.replace(/\s+/g, ' ').trim();
+        const e = colorElement(color);
+        if (n && e) out[n] = e;
+        name = '';
+        color = '';
+    };
+    chars.forEach((c) => {
+        if (isSep(c.ch)) return flush();
+        if (!name.trim() && c.ch.trim()) color = c.color;
+        name += c.ch;
+    });
+    flush();
+    return out;
+}
+
 // ---- 解析公告 ----
 // 「「彩獸神祭」限定角色」「轉出對象限定角色」「轉出對象期間限定角色」「轉出對象的激獸神祭限定角色：」「轉出對象的期間限定角色」
 const LIMITED_HEADER_RE = /^(?:「([^「」]+)」|轉出對象的?([^「」：:]*?))(?:期間)?限定角色[：:]?$/;
@@ -60,6 +127,7 @@ const ELEMENT_HEADER_RE = /^([火水木光闇])屬性$/;
 function parseLimitedTables(html) {
     const limited = [];
     const elements = {};
+    const elementOf = {};   // 名稱 → 屬性 (文字顏色、或「木屬性」這種表頭)
     for (const table of String(html).match(/<table\b[\s\S]*?<\/table>/gi) || []) {
         let current = null;
         for (const cells of tableRows(table)) {
@@ -73,16 +141,23 @@ function parseLimitedTables(html) {
                     limited.push(current);
                 } else if (e) {
                     elements[e[1]] = elements[e[1]] || [];
-                    current = { names: elements[e[1]] };
+                    current = { names: elements[e[1]], element: e[1] };
                 } else {
                     current = null;
                 }
                 continue;
             }
-            if (current) cells.forEach((c) => current.names.push(...splitNameCell(c.html)));
+            if (current) {
+                cells.forEach((c) => {
+                    const names = splitNameCell(c.html);
+                    current.names.push(...names);
+                    if (current.element) names.forEach((n) => { elementOf[n] = current.element; });
+                    else Object.assign(elementOf, cellElements(c.html));
+                });
+            }
         }
     }
-    return { limited: limited.filter((l) => l.names.length > 0), elements };
+    return { limited: limited.filter((l) => l.names.length > 0), elements, elementOf };
 }
 const parseLimitedLists = (html) => parseLimitedTables(html).limited;
 
@@ -152,9 +227,19 @@ const isStar6Base = (rarity) => {
 };
 
 // 公告 → 卡池需要的資料 (存起來，之後再和 pools.json 比對)
+//   elementOf：{ 名稱: 屬性 }，來自限定角色名單的文字顏色、屬性表頭、合作角色表的屬性欄
 function extractPoolData(html) {
-    const { limited, elements } = parseLimitedTables(html);
-    return { limited, elements, collab: parseCollabSections(html) };
+    const { limited, elements, elementOf } = parseLimitedTables(html);
+    const collab = parseCollabSections(html);
+    // 合作角色表：★6（獸神化前）的屬性優先 (卡池收的是這些)；同名的★4 等舊版本放在 elementOfLow，
+    // 只有屬性表還沒有這個名稱時才用。同一篇公告裡同名的以先出現的為準
+    const elementOfLow = {};
+    collab.forEach((sec) => sec.rows.forEach((r) => {
+        if (!r.element) return;
+        const target = isStar6Base(r.rarity) ? elementOf : elementOfLow;
+        if (!target[r.name]) target[r.name] = r.element;
+    }));
+    return { limited, elements, elementOf, elementOfLow, collab };
 }
 
 // ---- 名稱比對 ----
@@ -550,6 +635,43 @@ function planPoolChanges(poolsData, items, nameOverrides) {
     return { data, changes, flags };
 }
 
+// 屬性表 (elements.json 的 elements：{ 名稱: 屬性 }) 加上公告讀到的屬性。
+//   名稱用卡池裡的寫法 (套用名稱對應)；已經有的不覆蓋，和既有的屬性不一致時標出來。
+//   五個屬性祭典 (綠色幻想 = 木…) 預設名單裡的角色也補上
+function mergeElements(elements, items, poolsData, nameOverrides) {
+    const next = { ...(elements || {}) };
+    const keyed = new Map(Object.entries(next).map(([n, e]) => [poolKey(n), e]));
+    const flags = [];
+    let added = 0;
+    const put = (name, element, item) => {
+        const key = poolKey(name);
+        if (!key || !/^[火水木光闇]$/.test(element)) return;
+        if (keyed.has(key)) {
+            if (keyed.get(key) !== element && item) {
+                flags.push({ event: item.event.event, source: item.event.source,
+                    message: `「${name}」的屬性：屬性表是${keyed.get(key)}，這篇公告是${element}（沒有改，請確認）` });
+            }
+            return;
+        }
+        keyed.set(key, element);
+        next[name] = element;
+        added += 1;
+    };
+    readPools(poolsData).filter((p) => p.kind === 'limited' && p.months.length === 0 && ELEMENT_OF_POOL[p.pool])
+        .forEach((p) => p.chars.forEach((c) => put(c, ELEMENT_OF_POOL[p.pool])));
+    const all = (nameOverrides && nameOverrides.global) || {};
+    const byDate = [...items].sort((a, b) => String(a.event.date).localeCompare(String(b.event.date)));
+    byDate.forEach((item) => {
+        Object.entries((item.data && item.data.elementOf) || {}).forEach(([name, element]) => put(all[name] || name, element, item));
+    });
+    // ★4 等舊版本的屬性：只補還沒有的名稱，不一致時不用標出來
+    byDate.forEach((item) => {
+        Object.entries((item.data && item.data.elementOfLow) || {}).forEach(([name, element]) => put(all[name] || name, element, null));
+    });
+    const sorted = Object.fromEntries(Object.entries(next).sort(([a], [b]) => a.localeCompare(b, 'zh-Hant')));
+    return { elements: sorted, added, flags };
+}
+
 // pools.json 的寫法：一個卡池一行，欄位順序照原本
 function formatPoolsJson(data) {
     const value = (v) => (Array.isArray(v) ? `[${v.map((x) => JSON.stringify(x)).join(', ')}]` : JSON.stringify(v));
@@ -602,5 +724,6 @@ function describePoolChanges({ changes, flags }) {
 
 module.exports = {
     splitNameCell, parseLimitedLists, parseLimitedTables, pickSections, parseCollabSections, isStar6Base, extractPoolData,
+    colorElement, cellElements, mergeElements,
     splitGlued, knownNames, cleanNames, planPoolChanges, formatPoolsJson, describePoolChanges
 };

@@ -370,6 +370,13 @@ body {
     font-weight: 700;
 }
 
+/* --- 角色名稱依屬性上色 (不知道屬性的照一般顏色) --- */
+.el-fire { color: #d32f2f !important; }
+.el-water { color: #1565c0 !important; }
+.el-wood { color: #2e7d32 !important; }
+.el-light { color: #b28900 !important; }   /* 黃色在白底看不清楚，用深一點的金黃 */
+.el-dark { color: #4a148c !important; }    /* 紫偏黑 */
+
 /* --- 頁尾 (版權註記) --- */
 .site-footer {
     text-align: center;

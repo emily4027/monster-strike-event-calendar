@@ -41,7 +41,7 @@ if [ ! -s "$REPORT" ]; then
   exit 0
 fi
 
-if git diff --quiet -- pools.json; then
+if git diff --quiet -- pools.json && [ -z "$(git status --porcelain -- elements.json)" ]; then
   {
     echo "爬蟲讀到的公告裡，有些卡池沒辦法自動更新，請確認後手動處理（可以把這個 issue 的內容貼給 Claude）。"
     echo
@@ -51,7 +51,7 @@ if git diff --quiet -- pools.json; then
   exit 0
 fi
 
-git add pools.json
+git add pools.json elements.json
 git commit -m "卡池：依官網公告更新 ($TODAY)"
 git push --force origin "$BRANCH"   # 分支只有爬蟲在用
 

@@ -61,6 +61,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let pools = [];
     let limitedOf = buildLimitedLookup([]);
     let nameFixes = readNameFixes(null);
+    let elementClass = () => '';   // 角色名稱 → 屬性的 CSS class
     let isAdmin = false;
     let openName = '';        // 存檔後重新渲染時，維持展開這個角色
     let source = 'pending';   // pending (確認登入中) | local | cloud | cloud-error
@@ -225,7 +226,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const summary = el('summary', 'catalog-summary');
 
         const main = el('div', 'catalog-main');
-        main.appendChild(el('span', 'catalog-name', entry.name));
+        main.appendChild(el('span', `catalog-name ${elementClass(entry.name)}`, entry.name));
         if (entry.pool) {
             const limited = entry.pool.kind === 'limited';
             const badge = el('span', `pool-badge pool-${entry.pool.kind}`, `${limited ? '限定' : '合作'}：${entry.pool.pools.join('、')}`);
@@ -423,6 +424,10 @@ document.addEventListener('DOMContentLoaded', () => {
         pools = list;
         limitedOf = buildLimitedLookup(pools);
         renderPoolOptions();
+        render();
+    });
+    S.loadElementClasses().then((fn) => {
+        elementClass = fn;
         render();
     });
     S.loadNameFixes().then((fixes) => {

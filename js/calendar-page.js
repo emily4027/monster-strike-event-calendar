@@ -47,6 +47,7 @@ document.addEventListener('DOMContentLoaded', () => {
     let summary = new Map();
     let pools = [];
     let nameFixes = readNameFixes(null);
+    let elementClass = () => '';   // 角色名稱 → 屬性的 CSS class
     let toastTimer = null;
     let modal = null;
     let openedEvent = null;     // 活動詳細開著時，卡池或紀錄讀完要重畫
@@ -232,7 +233,7 @@ document.addEventListener('DOMContentLoaded', () => {
             const chips = el('div', 'pool-chars');
             p.chars.forEach((name) => {
                 const count = got.get(poolKey(name)) || 0;
-                const chip = el('a', 'pool-char' + (count ? ' got' : ''), count ? `✓ ${name} ×${count}` : name);
+                const chip = el('a', `pool-char ${elementClass(name)}` + (count ? ' got' : ''), count ? `✓ ${name} ×${count}` : name);
                 chip.href = characterLink(name);
                 chip.title = count ? `抽到 ${count} 隻，看角色頁的紀錄` : '看角色頁的紀錄';
                 chips.appendChild(chip);
@@ -369,6 +370,10 @@ document.addEventListener('DOMContentLoaded', () => {
         render();
         S.loadPools().then((list) => {
             pools = list;
+            if (openedEvent) renderEventBody(openedEvent);
+        });
+        S.loadElementClasses().then((fn) => {
+            elementClass = fn;
             if (openedEvent) renderEventBody(openedEvent);
         });
         S.loadNameFixes().then((fixes) => {

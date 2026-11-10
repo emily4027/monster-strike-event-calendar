@@ -298,3 +298,22 @@ test('合作活動同時複刻的前幾彈：同段落後面的表、其他轉�
     assert.deepEqual(poolsForEvent(readPools(r.data), '2026-05月 作品A').map((p) => [p.pool, p.rerun]),
         [['作品A', false], ['作品A・複刻 1', true], ['作品A・複刻 2', true]]);
 });
+
+test('屬性：文字顏色、屬性表頭、合作表的屬性欄；合併到屬性表時不覆蓋既有的', () => {
+    assert.deepEqual(['rgb(255, 0, 0)', 'rgb(51, 102, 255)', '#339966', 'rgb(255, 153, 0)', '#800080', '#999999', ''].map(X.colorElement),
+        ['火', '水', '木', '光', '闇', '', '']);
+    const cell = '<span style="color: rgb(255, 0, 0);">卡蜜菈</span>　<span style="color: rgb(51, 153, 102);">九十九　<span style="color: rgb(128, 0, 128);">馬克士威</span></span>　沒顏色';
+    assert.deepEqual(X.cellElements(cell), { '卡蜜菈': '火', '九十九': '木', '馬克士威': '闇' });
+    const html = '<table><tbody><tr><th>「綠色幻想」限定角色</th></tr><tr><td>' + cell + '</td></tr><tr><th>水屬性</th></tr><tr><td>甲 乙</td></tr></tbody></table>' + COLLAB;
+    const data = X.extractPoolData(html);
+    assert.equal(data.elementOf['卡蜜菈'], '火');
+    assert.equal(data.elementOf['甲'], '水');
+    assert.equal(data.elementOf['角色 二'], '水');
+    assert.equal(data.elementOf['角色一'], undefined);       // ★4：優先度低
+    assert.equal(data.elementOfLow['角色一'], '火');
+    const it = { event: { event: 'E', date: '2026-01-01', source: 'u' }, data };
+    const m = X.mergeElements({ '卡蜜菈': '水' }, [it], POOLS(), { global: { '甲': '甲（正式）' } });
+    assert.equal(m.elements['卡蜜菈'], '水');
+    assert.equal(m.elements['甲（正式）'], '水');
+    assert.match(m.flags[0].message, /「卡蜜菈」的屬性：屬性表是水，這篇公告是火/);
+});
