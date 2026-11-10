@@ -27,6 +27,7 @@
     //           沒有那個月的版本時不顯示這個卡池 (寧可沒有，也不要顯示錯的)。
     //           沒有 months 的是預設版本 (官網限定角色名單)，只用來標出角色屬於哪個限定卡池。
     //           舊格式的 since ("YYYY-MM") 當成 months: [since] 讀
+    //   rerun：合作卡池用。true = 那期合作活動同時複刻的前幾彈 (卡池名稱是「主卡池・複刻 N」)，畫面上和這期的新角色分開顯示
     //   variant：選填。同一個月有兩個名單不同的同名轉蛋時，活動名稱含有這段文字的才用這個版本
     const MONTH_RE = /^\d{4}-\d{2}$/;
     function readMonths(p) {
@@ -46,6 +47,7 @@
                     .filter((parts) => parts.length > 0),
                 months: readMonths(p),
                 variant: typeof p.variant === 'string' ? p.variant.trim() : '',
+                rerun: p.rerun === true,
                 chars: p.chars.filter((c) => typeof c === 'string' && c.trim()).map((c) => c.trim())
             }));
     }

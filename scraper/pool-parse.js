@@ -94,12 +94,14 @@ function gachaHeading(inner) {
     if (/INDEX/i.test(text)) return null;
     const named = text.match(GACHA_NAME_RE);
     if (named) return { heading: text, gachaName: (named[1] || named[2]).trim() };
-    if (/轉蛋[^「《]*開跑/.test(text)) return { heading: text, gachaName: '' };
+    // 沒有名稱的轉蛋標題：「…轉蛋開跑」「第1彈合作活動的轉蛋再度登場！」
+    if (/轉蛋[^「《]*(?:開跑|再度登場)/.test(text)) return { heading: text, gachaName: '' };
     return null;
 }
 
 // 合作活動的角色表：轉蛋段落裡，表頭有「角色…」和「稀有度」的表格
-//   → [{ heading, gachaName, rows: [{ name, rarity }] }] (一個段落一筆)
+//   → [{ heading, gachaName, rows: [{ name, rarity, element }], tables: [[row...]] }] (一個段落一筆)
+//   tables：段落裡每張角色表各一組 (第一張是這期的新角色，後面的是同時複刻的前幾彈)
 //   轉蛋標題 (任何層級) 開始新的段落；其他標題只有層級不深於第一個轉蛋標題時才結束段落
 function parseCollabSections(html) {
     const tokens = [...String(html).matchAll(/<(h[2-6])\b[^>]*>([\s\S]*?)<\/\1>|<table\b[\s\S]*?<\/table>/gi)];
@@ -113,7 +115,7 @@ function parseCollabSections(html) {
         if (t[1]) {
             const g = gachaHeading(t[2]);
             if (g) {
-                section = { ...g, rows: [] };
+                section = { ...g, rows: [], tables: [] };
                 sections.push(section);
             } else if (Number(t[1][1]) <= level) {
                 section = null;
@@ -127,11 +129,18 @@ function parseCollabSections(html) {
         if (head === -1) continue;
         const nameCol = rows[head].findIndex((c) => /^角色/.test(plainText(c.html)));
         const rarityCol = rows[head].findIndex((c) => /稀有度/.test(plainText(c.html)));
+        const elementCol = rows[head].findIndex((c) => /屬性/.test(plainText(c.html)));
+        const table = [];
         rows.slice(head + 1).forEach((cells) => {
             const name = cells[nameCol] ? plainText(cells[nameCol].html) : '';
             const rarity = cells[rarityCol] ? plainText(cells[rarityCol].html) : '';
-            if (name) section.rows.push({ name, rarity });
+            const element = elementCol !== -1 && cells[elementCol] ? plainText(cells[elementCol].html) : '';
+            if (name) table.push({ name, rarity, ...(/^[火水木光闇]$/.test(element) ? { element } : {}) });
         });
+        if (table.length) {
+            section.tables.push(table);
+            section.rows.push(...table);
+        }
     }
     return sections.filter((s) => s.rows.length > 0);
 }
@@ -261,6 +270,8 @@ function pickSections(sections, eventName) {
 const result = (data, change, flags) => ({ data, changes: change ? [change] : [], flags });
 
 // 合作卡池：轉蛋段落裡「★6（獸神化前）」的角色
+//   這期的卡池 = 選到的段落的第一張表；同一段落後面的表、以及其他轉蛋段落 (「轉蛋「鬼滅之刃」再度登場！」)
+//   是同時複刻的前幾彈，每張表各存成一個「主卡池名稱・複刻 N」的卡池 (rerun: true)，在畫面上分開顯示
 function planCollab(poolsData, item) {
     const { event, data } = item;
     const flags = [];
@@ -268,11 +279,13 @@ function planCollab(poolsData, item) {
     const month = eventMonth(event.event);
     const raw = Array.isArray(poolsData.pools) ? poolsData.pools : [];
     const parsed = readPools(poolsData);
-    const none = result(poolsData, null, flags);
+    const none = { data: poolsData, changes: [], flags };
 
+    const star6 = (rows) => rows.filter((r) => isStar6Base(r.rarity)).map((r) => r.name);
     const all = data.collab
-        .map((s) => ({ ...s, star6: s.rows.filter((r) => isStar6Base(r.rarity)).map((r) => r.name) }))
-        .filter((s) => s.star6.length > 0);
+        .map((s) => ({ ...s, lists: (s.tables || [s.rows]).map(star6).filter((l) => l.length > 0) }))
+        .filter((s) => s.lists.length > 0)
+        .map((s) => ({ ...s, star6: s.lists.flat() }));
     if (all.length === 0) {
         if (data.collab.length > 0) flag('轉蛋段落的角色表裡沒有「★6（獸神化前）」的角色，需要手動處理');
         else flag('找不到轉蛋段落的角色表（公告格式可能不同），需要手動處理');
@@ -284,35 +297,77 @@ function planCollab(poolsData, item) {
             + all.map((s) => `「${s.heading}」→ ${s.star6.join('、')}`).join('；'));
         return none;
     }
-    const existing = poolsForEvent(parsed, event.event).filter((p) => p.kind === 'collab');
+    const existing = poolsForEvent(parsed, event.event).filter((p) => p.kind === 'collab' && !p.rerun);
     if (existing.length > 1) {
         flag(`活動名稱對到好幾個合作卡池（${existing.map((p) => p.pool).join('、')}），需要手動處理`);
         return none;
     }
-    const poolName = existing.length === 1 ? existing[0].pool : (sections.map((s) => s.gachaName).find(Boolean) || '');
-    const { names, notes } = cleanNames(applyOverrides(sections.flatMap((s) => s.star6), poolName), knownNames(poolsData));
-    // 名稱的提醒只在這期真的有變動時列出
-    const done = (data2, change) => {
-        if (change) notes.forEach(flag);
-        return result(data2, change, flags);
-    };
-    if (existing.length === 1) {
-        const target = existing[0];
-        if (sameSet(names, target.chars)) return none;
-        const index = raw.findIndex((p) => p.pool === target.pool && p.kind === 'collab');
-        const pools = raw.map((p, i) => (i === index ? { ...p, ...(p.source ? {} : { source: event.source }), chars: names } : p));
-        return done({ ...poolsData, pools },
-            { type: 'update-collab', pool: target.pool, event: event.event, source: event.source, chars: names, ...diffNames(names, target.chars) });
-    }
-    if (!month) {
+    if (existing.length === 0 && !month) {
         flag('活動名稱沒有年月，無法建立合作卡池，需要手動處理');
         return none;
     }
-    const name = sections.map((s) => s.gachaName).find(Boolean) || event.event.replace(/^\d{4}-\d{2}月\s*/, '');
-    const entry = { pool: name, kind: 'collab', match: [`${month}月+${name}`], source: event.source, chars: names };
-    flag(`新的合作卡池「${name}」（比對關鍵字 ${entry.match[0]}），請確認卡池名稱`);
-    return done({ ...poolsData, pools: insertEntry(raw, entry) },
-        { type: 'new-collab', pool: name, event: event.event, source: event.source, chars: names, added: names, removed: [] });
+    const poolName = existing.length === 1 ? existing[0].pool
+        : (sections.map((s) => s.gachaName).find(Boolean) || event.event.replace(/^\d{4}-\d{2}月\s*/, ''));
+    const mainRaw = sections.flatMap((s) => s.lists[0]);
+    const rerunLists = [
+        ...sections.flatMap((s) => s.lists.slice(1)),
+        ...all.filter((s) => !sections.includes(s)).flatMap((s) => s.lists)
+    ];
+
+    let current = poolsData;
+    const changes = [];
+    const clean = (list) => {
+        const r = cleanNames(applyOverrides(list, poolName), knownNames(current));
+        return r;
+    };
+    // 名稱的提醒只在這期真的有變動時列出
+    const apply = (next, change, notes) => {
+        current = next;
+        changes.push(change);
+        notes.forEach(flag);
+    };
+
+    // 這期的卡池
+    const main = clean(mainRaw);
+    let matchKeys;
+    if (existing.length === 1) {
+        const index = raw.findIndex((p) => p.pool === poolName && p.kind === 'collab' && !p.rerun);
+        matchKeys = raw[index].match;
+        if (!sameSet(main.names, existing[0].chars)) {
+            const pools = current.pools.map((p, i) => (i === index ? { ...p, ...(p.source ? {} : { source: event.source }), chars: main.names } : p));
+            apply({ ...current, pools },
+                { type: 'update-collab', pool: poolName, event: event.event, source: event.source, chars: main.names, ...diffNames(main.names, existing[0].chars) },
+                main.notes);
+        }
+    } else {
+        matchKeys = [`${month}月+${poolName}`];
+        const entry = { pool: poolName, kind: 'collab', match: matchKeys, source: event.source, chars: main.names };
+        flag(`新的合作卡池「${poolName}」（比對關鍵字 ${matchKeys[0]}），請確認卡池名稱`);
+        apply({ ...current, pools: insertEntry(current.pools, entry) },
+            { type: 'new-collab', pool: poolName, event: event.event, source: event.source, chars: main.names, added: main.names, removed: [] },
+            main.notes);
+    }
+
+    // 複刻的前幾彈：每張表一個卡池，接在主卡池後面
+    rerunLists.forEach((list, i) => {
+        const name = `${poolName}・複刻 ${i + 1}`;
+        const r = clean(list);
+        const index = current.pools.findIndex((p) => p.pool === name && p.kind === 'collab');
+        if (index !== -1) {
+            if (sameSet(r.names, current.pools[index].chars)) return;
+            const before = current.pools[index].chars;
+            apply({ ...current, pools: current.pools.map((p, j) => (j === index ? { ...p, chars: r.names } : p)) },
+                { type: 'update-rerun', pool: name, event: event.event, source: event.source, chars: r.names, ...diffNames(r.names, before) }, r.notes);
+            return;
+        }
+        const entry = { pool: name, kind: 'collab', ...(matchKeys ? { match: matchKeys } : {}), rerun: true, source: event.source, chars: r.names };
+        const pools = [...current.pools];
+        const anchor = pools.reduce((idx, p, j) => (p.kind === 'collab' && (p.pool === poolName || p.pool.startsWith(`${poolName}・複刻 `)) ? j : idx), -1);
+        pools.splice(anchor + 1, 0, entry);
+        apply({ ...current, pools },
+            { type: 'new-rerun', pool: name, event: event.event, source: event.source, chars: r.names, added: r.names, removed: [] }, r.notes);
+    });
+    return { data: current, changes, flags };
 }
 
 // 本家限定卡池的一期名單 → 變動 (pool 不存在時新增卡池)
@@ -510,7 +565,9 @@ const TYPE_LABELS = {
     'inherit': '限定卡池沿用之前的名單',
     'new-limited': '新的限定卡池',
     'update-collab': '修改合作卡池',
-    'new-collab': '新的合作卡池'
+    'new-collab': '新的合作卡池',
+    'new-rerun': '合作活動同時複刻的前幾彈',
+    'update-rerun': '修改複刻的卡池'
 };
 function describePoolChanges({ changes, flags }) {
     const lines = [];

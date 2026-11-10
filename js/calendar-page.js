@@ -226,7 +226,7 @@ document.addEventListener('DOMContentLoaded', () => {
         found.forEach((p) => {
             const block = el('div', 'pool-block');
             const head = el('div', 'pool-head');
-            head.appendChild(el('span', `pool-badge pool-${p.kind}`, p.kind === 'collab' ? '合作限定' : '本家限定'));
+            head.appendChild(el('span', `pool-badge pool-${p.kind}`, p.kind !== 'collab' ? '本家限定' : (p.rerun ? '合作限定・複刻' : '合作限定')));
             head.appendChild(el('span', 'pool-name', p.pool));
             block.appendChild(head);
             const chips = el('div', 'pool-chars');

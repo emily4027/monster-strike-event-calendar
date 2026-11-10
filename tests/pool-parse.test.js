@@ -269,3 +269,32 @@ test('同一個月有兩個名單不同的同名轉蛋：後到的 (活動清單
     unlogged.event.unlogged = true;
     assert.equal(X.planPoolChanges(POOLS(), [unlogged]).changes.length, 0);
 });
+
+test('合作活動同時複刻的前幾彈：同段落後面的表、其他轉蛋段落各存成「主卡池・複刻 N」，和這期分開', () => {
+    const table = (rows) => '<table><tbody><tr><th>角色名</th><th>稀有度</th><th>屬性</th></tr>'
+        + rows.map(([n, r, e]) => `<tr><td>${n}</td><td>${r}</td><td>${e}</td></tr>`).join('') + '</tbody></table>';
+    const html = '<h4>轉蛋「作品A」開跑！</h4>'
+        + table([['新角色一', '★6（獸神化前）', '火'], ['新角色二', '★4', '水']])
+        + table([['一彈角色', '★6（獸神化前）', '木']])
+        + '<h4>第1彈合作活動的轉蛋再度登場！</h4>'
+        + table([['舊角色甲', '★6（獸神化前）', '光'], ['舊角色乙', '★6（獸神化前）', '闇']]);
+    const sections = X.parseCollabSections(html);
+    assert.deepEqual(sections.map((x) => x.tables.length), [2, 1]);
+    assert.equal(sections[0].rows[0].element, '火');
+
+    const r = X.planPoolChanges(POOLS(), [item('2026-05月 作品A', '2026-05-10', 'collab', html)]);
+    assert.deepEqual(r.changes.map((c) => [c.type, c.pool]), [
+        ['update-collab', '作品A'], ['new-rerun', '作品A・複刻 1'], ['new-rerun', '作品A・複刻 2']
+    ]);
+    assert.deepEqual(r.data.pools.slice(0, 3).map((p) => [p.pool, !!p.rerun, p.chars]), [
+        ['作品A', false, ['新角色一']],
+        ['作品A・複刻 1', true, ['一彈角色']],
+        ['作品A・複刻 2', true, ['舊角色甲', '舊角色乙']]
+    ]);
+    // 再跑一次不會重複新增；畫面上三塊都列出來
+    const again = X.planPoolChanges(r.data, [item('2026-05月 作品A', '2026-05-10', 'collab', html)]);
+    assert.equal(again.changes.length, 0);
+    const { readPools, poolsForEvent } = require('../pools.js');
+    assert.deepEqual(poolsForEvent(readPools(r.data), '2026-05月 作品A').map((p) => [p.pool, p.rerun]),
+        [['作品A', false], ['作品A・複刻 1', true], ['作品A・複刻 2', true]]);
+});
