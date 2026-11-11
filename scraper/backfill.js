@@ -80,8 +80,12 @@ function findArticle(parsed, event) {
     return parsed
         .filter((p) => days(p) <= MATCH_DAYS)
         .filter((p) => {
-            const k = matchKey(p.scraped.event);
-            return k && key && (k.includes(key) || key.includes(k));
+            // 公告判斷出的轉蛋名稱，或公告裡任何一個轉蛋段落的名稱
+            const names = [p.scraped.event, ...((p.data && p.data.collab) || []).map((s) => s.gachaName).filter(Boolean)];
+            return names.some((n) => {
+                const k = matchKey(n);
+                return k && key && (k.includes(key) || key.includes(k));
+            });
         })
         .sort((x, y) => days(x) - days(y))[0] || null;
 }

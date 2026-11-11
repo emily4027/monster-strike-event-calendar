@@ -47,7 +47,10 @@
             <div class="calendar-toolbar">
                 <div class="month-nav">
                     <button type="button" class="btn btn-outline-secondary btn-sm" id="prev-month" aria-label="上個月"><i class="bi bi-chevron-left"></i></button>
-                    <h2 id="month-title" class="month-title"></h2>
+                    <div class="month-picker-wrap">
+                        <button type="button" id="month-title" class="month-title" aria-haspopup="dialog" aria-expanded="false" title="選擇年月"></button>
+                        <div id="month-picker" class="month-picker" role="dialog" aria-label="選擇年月" hidden></div>
+                    </div>
                     <button type="button" class="btn btn-outline-secondary btn-sm" id="next-month" aria-label="下個月"><i class="bi bi-chevron-right"></i></button>
                     <button type="button" class="btn btn-outline-secondary btn-sm" id="today-btn">今天</button>
                 </div>

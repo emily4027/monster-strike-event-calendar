@@ -192,11 +192,59 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     function render() {
-        monthTitle.textContent = `${current.year} 年 ${current.month} 月`;
+        monthTitle.textContent = `${current.year} 年 ${current.month} 月 ▾`;
         updateSummary();
         renderGrid();
         renderList();
         if (openedEvent) renderEventBody(openedEvent);
+    }
+
+    // 月份選擇器：點上方的「2026 年 11 月」打開，選年份和月份直接跳過去 (不用一個月一個月按)
+    //   有活動的月份下面有小圓點
+    const monthPicker = $('month-picker');
+    let pickerYear = current.year;
+    function closeMonthPicker() {
+        monthPicker.hidden = true;
+        monthTitle.setAttribute('aria-expanded', 'false');
+    }
+    function renderMonthPicker() {
+        const head = el('div', 'month-picker-head');
+        const yearButton = (text, delta, label) => {
+            const b = el('button', 'btn btn-sm btn-outline-secondary', text);
+            b.type = 'button';
+            b.setAttribute('aria-label', label);
+            b.addEventListener('click', () => { pickerYear += delta; renderMonthPicker(); });
+            return b;
+        };
+        head.append(yearButton('‹', -1, '上一年'), el('span', 'month-picker-year', `${pickerYear} 年`), yearButton('›', 1, '下一年'));
+        const grid = el('div', 'month-picker-grid');
+        const thisMonth = monthOf(today);
+        for (let m = 1; m <= 12; m++) {
+            const key = C.monthKey({ year: pickerYear, month: m });
+            const b = el('button', 'month-picker-month', `${m} 月`);
+            b.type = 'button';
+            if (pickerYear === current.year && m === current.month) b.classList.add('selected');
+            if (pickerYear === thisMonth.year && m === thisMonth.month) b.classList.add('this-month');
+            if (events.some((e) => e.date.slice(0, 7) <= key && (e.endDate || e.date).slice(0, 7) >= key)) b.classList.add('has-events');
+            b.addEventListener('click', () => {
+                closeMonthPicker();
+                goToMonth({ year: pickerYear, month: m });
+            });
+            grid.appendChild(b);
+        }
+        const foot = el('div', 'month-picker-foot');
+        const todayButton = el('button', 'btn btn-sm btn-link', '回到今天');
+        todayButton.type = 'button';
+        todayButton.addEventListener('click', () => { closeMonthPicker(); goToMonth(thisMonth); });
+        foot.appendChild(todayButton);
+        monthPicker.replaceChildren(head, grid, foot);
+    }
+    function toggleMonthPicker() {
+        if (!monthPicker.hidden) return closeMonthPicker();
+        pickerYear = current.year;
+        renderMonthPicker();
+        monthPicker.hidden = false;
+        monthTitle.setAttribute('aria-expanded', 'true');
     }
 
     function goToMonth(month) {
@@ -441,6 +489,13 @@ document.addEventListener('DOMContentLoaded', () => {
         $('prev-month').addEventListener('click', () => goToMonth(C.addMonths(current, -1)));
         $('next-month').addEventListener('click', () => goToMonth(C.addMonths(current, 1)));
         $('today-btn').addEventListener('click', () => goToMonth(monthOf(today)));
+        monthTitle.addEventListener('click', toggleMonthPicker);
+        document.addEventListener('click', (event) => {
+            if (!monthPicker.hidden && !event.target.closest('.month-picker-wrap')) closeMonthPicker();
+        });
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape' && !monthPicker.hidden) closeMonthPicker();
+        });
         accountFilter.addEventListener('change', () => {
             S.storage.set(ACCOUNT_FILTER_KEY, accountFilter.value);
             render();

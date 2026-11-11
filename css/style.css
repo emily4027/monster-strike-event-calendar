@@ -166,9 +166,60 @@ body {
     font-weight: 700;
     color: var(--accent);
     margin: 0 4px;
-    min-width: 8.5em;
+    min-width: 9em;
     text-align: center;
+    background: none;
+    border: none;
+    border-radius: 8px;
+    padding: 2px 6px;
+    cursor: pointer;
 }
+.month-title:hover, .month-title:focus-visible { background: var(--accent-light); }
+
+/* 月份選擇器 (點月份標題打開) */
+.month-picker-wrap { position: relative; }
+.month-picker {
+    position: absolute;
+    top: calc(100% + 6px);
+    left: 50%;
+    transform: translateX(-50%);
+    z-index: 20;
+    width: 260px;
+    max-width: calc(100vw - 32px);
+    background: #fff;
+    border: 1px solid var(--grid-line);
+    border-radius: 12px;
+    box-shadow: 0 8px 24px rgba(0, 0, 0, 0.15);
+    padding: 12px;
+}
+.month-picker-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 10px; }
+.month-picker-year { font-weight: 700; font-size: 1.05rem; }
+.month-picker-grid { display: grid; grid-template-columns: repeat(4, 1fr); gap: 6px; }
+.month-picker-month {
+    position: relative;
+    border: 1px solid transparent;
+    background: #f6f6f6;
+    border-radius: 8px;
+    padding: 8px 0 10px;
+    font-size: 0.9rem;
+    cursor: pointer;
+}
+.month-picker-month:hover { background: var(--accent-light); }
+.month-picker-month.this-month { border-color: var(--accent); }
+.month-picker-month.selected { background: var(--accent); color: #fff; font-weight: 700; }
+.month-picker-month.has-events::after {
+    content: "";
+    position: absolute;
+    left: 50%;
+    bottom: 4px;
+    width: 4px;
+    height: 4px;
+    margin-left: -2px;
+    border-radius: 50%;
+    background: var(--accent);
+}
+.month-picker-month.selected.has-events::after { background: #fff; }
+.month-picker-foot { text-align: right; margin-top: 6px; }
 .toolbar-filters { min-width: 140px; }
 
 .tag-legend {

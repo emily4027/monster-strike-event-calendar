@@ -456,7 +456,16 @@ function planCollab(poolsData, item) {
 }
 
 // 本家限定卡池的一期名單 → 變動 (pool 不存在時新增卡池)
-function planLimitedList(poolsData, event, pool, rawNames) {
+//   exact：選填。活動名稱本身對不到這個卡池時 (「怪物彈珠世代」同時開各年份的卡池)，
+//          在這期的版本加上 "=活動名稱" 的比對，讓這場活動也列出這個卡池
+function planLimitedList(poolsData, event, pool, rawNames, exact) {
+    const exactKey = exact ? `=${exact}` : '';
+    const withExact = (match, fallback) => {
+        const list = Array.isArray(match) && match.length ? match : [fallback];
+        return exactKey && !list.includes(exactKey) ? [...list, exactKey] : list;
+    };
+    const linkExact = (data2, index) => ({ ...data2, pools: data2.pools.map((p, i) => (i === index ? { ...p, match: withExact(p.match, p.pool) } : p)) });
+    const needsExact = (p) => exactKey && !(Array.isArray(p.match) && p.match.includes(exactKey));
     const flags = [];
     const flag = (message) => flags.push({ event: event.event, source: event.source, message });
     const month = eventMonth(event.event);
@@ -481,7 +490,11 @@ function planLimitedList(poolsData, event, pool, rawNames) {
     const own = inMonth.filter(([p]) => p.variant && eventKey.includes(poolKey(p.variant)))
         .sort(([a], [b]) => b.variant.length - a.variant.length)[0] || inMonth.find(([p]) => !p.variant);
     if (own) {
-        if (sameSet(names, own[0].chars)) return none;
+        if (sameSet(names, own[0].chars)) {
+            if (!needsExact(own[0])) return none;
+            return done(linkExact(poolsData, own[1]),
+                { type: 'add-month', pool, month, event: event.event, source: event.source, chars: names, added: [], removed: [], previous: rawMonths(own[0]).join('、') });
+        }
         const d = diffNames(names, own[0].chars);
         // 活動清單沒有的祭典：先到的那期為準，不處理
         if (event.unlogged) return none;
@@ -507,11 +520,12 @@ function planLimitedList(poolsData, event, pool, rawNames) {
     // 名單和某一期相同 → 把這個月加進那個版本
     const same = versions.find(([p]) => rawMonths(p).length > 0 && !p.variant && sameSet(names, p.chars));
     if (same) {
-        return done(addMonth(poolsData, same[1], month),
+        return done(linkExact(addMonth(poolsData, same[1], month), same[1]),
             { type: 'add-month', pool, month, event: event.event, source: event.source, chars: names, added: [], removed: [], previous: rawMonths(same[0]).join('、') });
     }
     const template = raw.find((p) => p.pool === pool && p.kind === 'limited' && Array.isArray(p.match));
-    const entry = { pool, kind: 'limited', ...(template ? { match: template.match } : {}), months: [month], source: event.source, chars: names };
+    const baseMatch = template ? template.match.filter((m) => !String(m).startsWith('=')) : null;
+    const entry = { pool, kind: 'limited', ...(baseMatch || exactKey ? { match: withExact(baseMatch, pool) } : {}), months: [month], source: event.source, chars: names };
     return done({ ...poolsData, pools: insertEntry(raw, entry) },
         { type: 'add-version', pool, month, event: event.event, source: event.source, chars: names, ...diff,
             previous: earlier ? `${maxMonth(earlier[0])} 的版本` : '預設版本' });
@@ -580,6 +594,31 @@ function planHonke(poolsData, item) {
     if (!eventMonth(event.event)) {
         flag('活動名稱沒有年月，無法決定卡池版本，需要手動處理');
         return result(poolsData, null, flags);
+    }
+    // 一篇公告同時開好幾個卡池 (「怪物彈珠世代」：2019、2018… 各有一張「「X」限定角色」表)：
+    // 每個卡池各自一個版本，畫面上分開顯示。沒寫卡池名稱的表 (轉出對象期間限定角色) 歸到第一個卡池
+    const groups = [];
+    data.limited.forEach((l) => {
+        const g = l.poolName ? groups.find((x) => poolKey(x.name) === poolKey(l.poolName)) : groups[0];
+        if (g) g.names.push(...l.names);
+        else if (l.poolName) groups.push({ name: l.poolName, names: [...l.names] });
+    });
+    if (groups.length >= 2) {
+        const bare = event.event.replace(/^\d{4}-\d{1,2}月\s*/, '').trim();
+        let current = poolsData;
+        const changes = [];
+        groups.forEach((g) => {
+            const pools = readPools(current);
+            const existing = pools.find((p) => p.kind === 'limited' && poolKey(p.pool) === poolKey(g.name));
+            if (!existing && event.unlogged) return;   // 活動清單沒有的祭典不新增卡池
+            const pool = existing ? existing.pool : g.name;
+            const matched = matchingPools(pools, event.event).some((p) => p.kind === 'limited' && p.pool === pool && !p.match.some((m) => m[0][0] === '='));
+            const r = planLimitedList(current, event, pool, g.names, matched ? '' : bare);
+            current = r.data;
+            changes.push(...r.changes);
+            flags.push(...r.flags);
+        });
+        return { data: current, changes, flags };
     }
     const parsed = readPools(poolsData);
     const header = data.limited.map((l) => l.poolName).find(Boolean) || '';

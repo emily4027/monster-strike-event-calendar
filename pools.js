@@ -21,6 +21,8 @@
     // pools.json → [{ pool, kind, match: [[關鍵字...]], months: ['YYYY-MM'...], chars }]
     //   kind：limited (常設轉蛋活動的限定角色) | collab (合作活動的角色)
     //   match：活動名稱含有其中一組的「全部」關鍵字就算這個卡池，例如 "世代+2015"；省略時用卡池名稱
+    //          "=名稱" 表示活動名稱 (去掉開頭的年月) 要和它完全相同。一篇公告同時開好幾個卡池時用
+    //          (「怪物彈珠世代」同時開 2019、2018…各年份的卡池：各年份那個月的版本都加上 "=怪物彈珠世代")
     //   months：限定卡池用。這個名單是哪幾個月的活動 (取自那期官網公告)，例如 ["2024-09"]。
     //           同一個卡池每期的角色不同 (新增限定角色、移到別的卡池)，所以每期公告各自一個版本；
     //           名單相同的期數共用一個版本。活動只用「自己那個月」的版本，不會沿用別期的名單，
@@ -43,7 +45,7 @@
                 pool: p.pool,
                 kind: p.kind,
                 match: (Array.isArray(p.match) && p.match.length > 0 ? p.match : [p.pool])
-                    .map((m) => String(m).split('+').map(poolKey).filter(Boolean))
+                    .map((m) => (String(m).startsWith('=') ? ['=' + poolKey(String(m).slice(1))] : String(m).split('+').map(poolKey).filter(Boolean)))
                     .filter((parts) => parts.length > 0),
                 months: readMonths(p),
                 variant: typeof p.variant === 'string' ? p.variant.trim() : '',
@@ -62,7 +64,11 @@
     function matchingPools(pools, eventName) {
         const key = poolKey(eventName);
         if (!key) return [];
-        return pools.filter((p) => p.match.some((parts) => parts.every((part) => key.includes(part))));
+        // "=名稱"：活動名稱 (去掉開頭的年月) 要和它完全相同
+        const bare = poolKey(String(eventName || '').trim().replace(/^\d{4}-\d{1,2}月\s*/, ''));
+        return pools.filter((p) => p.match.some((parts) => (parts[0][0] === '='
+            ? parts[0].slice(1) === bare
+            : parts.every((part) => key.includes(part)))));
     }
 
     // 限定卡池在這個月、這場活動要用的版本 (沒有時回傳 null)

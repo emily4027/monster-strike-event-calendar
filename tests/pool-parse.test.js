@@ -317,3 +317,29 @@ test('屬性：文字顏色、屬性表頭、合作表的屬性欄；合併到�
     assert.equal(m.elements['甲（正式）'], '水');
     assert.match(m.flags[0].message, /「卡蜜菈」的屬性：屬性表是水，這篇公告是火/);
 });
+
+test('一篇公告同時開好幾個卡池 (怪物彈珠世代)：各卡池各自一個版本，活動用 "=名稱" 對到每一個', () => {
+    const { readPools, poolsForEvent } = require('../pools.js');
+    const pools = { pools: [
+        { pool: '世代 2019', kind: 'limited', match: ['世代+2019'], chars: ['所羅門'] },
+        { pool: '世代 2018', kind: 'limited', match: ['世代+2018'], chars: ['瑪娜'] }
+    ] };
+    const html = '<table><tbody><tr><th>「世代 2019」限定角色</th></tr><tr><td>所羅門　亞伯</td></tr></tbody></table>'
+        + '<table><tbody><tr><th>火屬性</th></tr><tr><td>張遼</td></tr></tbody></table>'
+        + '<table><tbody><tr><th>「世代 2018」限定角色</th></tr><tr><td>瑪娜　摩西</td></tr></tbody></table>';
+    const r = X.planPoolChanges(pools, [item('2026-11月 怪物彈珠世代', '2026-11-10', 'honke', html)]);
+    assert.deepEqual(r.changes.map((c) => [c.type, c.pool, c.chars]), [
+        ['add-version', '世代 2019', ['所羅門', '亞伯']],
+        ['add-version', '世代 2018', ['瑪娜', '摩西']]
+    ]);
+    const P = readPools(r.data);
+    assert.deepEqual(poolsForEvent(P, '2026-11月 怪物彈珠世代').map((p) => [p.pool, p.chars]),
+        [['世代 2019', ['所羅門', '亞伯']], ['世代 2018', ['瑪娜', '摩西']]]);
+    assert.deepEqual(poolsForEvent(P, '2026-11月 怪物彈珠世代 2019 〜所羅門篇〜').map((p) => p.pool), ['世代 2019']);
+    assert.deepEqual(poolsForEvent(P, '2026-12月 怪物彈珠世代'), []);
+    // 下個月同樣的名單：月份加進同一個版本，這場活動一樣對得到
+    const next = X.planPoolChanges(r.data, [item('2026-12月 怪物彈珠世代', '2026-12-10', 'honke', html)]);
+    assert.deepEqual(next.changes.map((c) => c.type), ['add-month', 'add-month']);
+    assert.equal(poolsForEvent(readPools(next.data), '2026-12月 怪物彈珠世代').length, 2);
+    assert.equal(X.planPoolChanges(next.data, [item('2026-12月 怪物彈珠世代', '2026-12-10', 'honke', html)]).changes.length, 0);
+});
