@@ -490,8 +490,11 @@ document.addEventListener('DOMContentLoaded', () => {
         $('next-month').addEventListener('click', () => goToMonth(C.addMonths(current, 1)));
         $('today-btn').addEventListener('click', () => goToMonth(monthOf(today)));
         monthTitle.addEventListener('click', toggleMonthPicker);
+        // 點選擇器外面時關掉。用 composedPath 判斷：按年份的「‹」「›」會重畫選擇器，
+        // 被按的按鈕那時已經不在畫面上，用 closest 會誤判成點到外面
+        const pickerWrap = monthTitle.parentElement;
         document.addEventListener('click', (event) => {
-            if (!monthPicker.hidden && !event.target.closest('.month-picker-wrap')) closeMonthPicker();
+            if (!monthPicker.hidden && !event.composedPath().includes(pickerWrap)) closeMonthPicker();
         });
         document.addEventListener('keydown', (event) => {
             if (event.key === 'Escape' && !monthPicker.hidden) closeMonthPicker();
