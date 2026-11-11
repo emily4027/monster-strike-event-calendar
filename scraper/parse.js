@@ -183,8 +183,22 @@ function mergeEvents(existing, scrapedList) {
     return { events, added, updated };
 }
 
+// 管理員貼了公告網址的活動：公告的結束日補進清單 (只補空的結束日，其他欄位不動)
+//   fills：[{ source, endDate }]；回傳 { events, filled: [活動] }
+function fillEndDates(existing, fills) {
+    const filled = [];
+    const events = existing.map((e) => {
+        const f = fills.find((x) => x.source && x.source === e.source);
+        if (!f || e.endDate || !/^\d{4}-\d{2}-\d{2}$/.test(String(f.endDate)) || f.endDate < e.date) return e;
+        const next = { ...e, endDate: f.endDate };
+        filled.push(next);
+        return next;
+    });
+    return { events, filled };
+}
+
 module.exports = {
     SITE, EXCLUDE_KEYWORDS,
     htmlToLines, parseNewsList, parsePeriod, findPeriod, findGachaName, guessTag, parseArticle,
-    matchKey, sameEvent, mergeEvents
+    matchKey, sameEvent, mergeEvents, fillEndDates
 };

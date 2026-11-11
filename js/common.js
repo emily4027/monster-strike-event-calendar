@@ -1,7 +1,8 @@
 // =====================================================
 // 兩個頁面 (行事曆、角色) 共用的程式：window.Shared
 //   - 建立元素、localStorage
-//   - 讀取資料：活動清單、抽卡紀錄、卡池、名稱修正 (都只讀)
+//   - 讀取資料：活動清單、抽卡紀錄、卡池、屬性、名稱修正
+//   - 管理員的寫入：名稱修正 (saveNameFix)、編輯活動 (saveEventEdit)；抽卡紀錄絕對不寫入
 //   - 登入 / 登出、管理員判斷、雲端狀態
 //   - 懸浮工具箱選單
 // 需要先載入 firebase.js (module) 和 pools.js。
@@ -153,6 +154,22 @@
         return saved;
     }
 
+    // 管理員在行事曆編輯一場活動：transaction 裡讀最新的 shared/events，在最新的清單上套用這一場的修改後寫回
+    // (爬蟲或其他管理員剛好也改了清單時，別場活動的修改不會被蓋掉；這場活動被改名或刪除時會丟出錯誤)。
+    // 回傳存好的清單。只有這個函式會寫入活動清單
+    async function saveEventEdit(originalName, edit) {
+        const ref = docRef(...EVENTS_DOC);
+        let saved = null;
+        await fns().runTransaction(root.db, async (tx) => {
+            const snap = await tx.get(ref);
+            const list = snap.exists() ? snap.data().events : null;
+            if (!Array.isArray(list) || list.length === 0) throw new Error('雲端的活動清單是空的，先不寫入');
+            saved = root.CalendarCore.applyEventEdit(list, originalName, edit);
+            tx.set(ref, { events: saved, updatedAt: fns().serverTimestamp() });
+        });
+        return saved;
+    }
+
     // admins/{uid} 存在即為管理員；真正的寫入權限由 Firestore 規則把關
     async function checkAdmin(user) {
         if (!user) return false;
@@ -248,10 +265,12 @@
         document.head.appendChild(script);
     }
 
+    const poolsForEventCount = (pools, eventName) => root.CharacterPools.poolsForEvent(pools, eventName).length;
+
     root.Shared = {
         GACHA_LOCAL_KEY, THIS_TOOL,
         el, storage, waitForFirebase,
-        loadEvents, readLocalRecords, readCloudRecords, loadPools, loadElementClasses, loadNameFixes, saveNameFix, checkAdmin,
+        loadEvents, readLocalRecords, readCloudRecords, loadPools, loadElementClasses, loadNameFixes, saveNameFix, saveEventEdit, checkAdmin, poolsForEventCount,
         setStatus, initAuth, loadToolboxMenu
     };
 })(this);

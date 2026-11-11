@@ -135,3 +135,17 @@ test('轉蛋名稱：標題只有祭典名稱的公告、機率說明不是名�
 test('比對名稱：第二彈和第2彈視為相同', () => {
     assert.equal(P.matchKey('2026-01月 葬送的芙莉蓮第二彈'), P.matchKey('2026-01月 葬送的芙莉蓮第2彈'));
 });
+
+test('貼上的公告：只補空的結束日，其他活動和欄位不動', () => {
+    const url = 'https://www.monster-strike.com.tw/news/a.html';
+    const events = [
+        { event: 'A', date: '2026-11-07', source: url, tag: 'free' },
+        { event: 'B', date: '2026-11-07', endDate: '2026-11-09', source: 'https://www.monster-strike.com.tw/news/b.html' },
+        { event: 'C', date: '2026-11-07' }
+    ];
+    const r = P.fillEndDates(events, [{ source: url, endDate: '2026-11-20' }, { source: 'https://www.monster-strike.com.tw/news/b.html', endDate: '2026-11-30' }]);
+    assert.deepEqual(r.events[0], { event: 'A', date: '2026-11-07', source: url, tag: 'free', endDate: '2026-11-20' });
+    assert.deepEqual(r.events.slice(1), events.slice(1));
+    assert.equal(r.filled.length, 1);
+    assert.equal(P.fillEndDates(events, [{ source: url, endDate: '2026-11-01' }]).filled.length, 0);   // 比開始日早：不補
+});

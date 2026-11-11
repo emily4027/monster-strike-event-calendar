@@ -63,7 +63,7 @@ jobs:
       # 有新增活動時 commit 紀錄檔 (也讓 repo 保持有動靜，排程才不會因 60 天沒活動被停用)
       - name: Commit 紀錄
         run: |
-          git add scraper/log.md scraper/seen.json
+          git add scraper/log.md scraper/seen.json scraper/pool-seen.json
           if git diff --staged --quiet; then
             echo "沒有變動"
             exit 0

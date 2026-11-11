@@ -3,7 +3,7 @@
 // 和其他工具同一個專案 ms-toolbox-web。其他程式透過 window.firebaseFns 使用 SDK 的函式。
 //
 // 寫入：只有「角色」頁的管理員名稱修正 (shared/characters) 會用到 runTransaction。
-// 抽卡紀錄 (gacha_records) 和活動清單 (shared/events) 在網頁上絕對不寫入。
+// 以及行事曆的管理員編輯活動 (shared/events)。抽卡紀錄 (gacha_records) 在網頁上絕對不寫入。
 // =====================================================
 import { initializeApp } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-app.js";
 import { getAuth, GoogleAuthProvider, signInWithPopup, signOut, onAuthStateChanged } from "https://www.gstatic.com/firebasejs/11.6.1/firebase-auth.js";

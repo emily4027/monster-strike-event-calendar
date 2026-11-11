@@ -370,6 +370,25 @@ body {
     font-weight: 700;
 }
 
+/* --- 管理員：編輯活動 --- */
+.admin-badge {
+    font-size: 0.75rem;
+    background: var(--accent);
+    color: #fff;
+    border-radius: 6px;
+    padding: 2px 8px;
+}
+.admin-bar { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 10px; }
+.admin-hint { font-size: 0.8rem; color: #777; }
+.event-edit-form { display: flex; flex-direction: column; gap: 10px; }
+.edit-field { display: flex; flex-direction: column; gap: 3px; margin: 0; }
+.edit-label { font-weight: 600; font-size: 0.85rem; }
+.edit-hint { font-size: 0.75rem; color: #777; }
+.edit-error { color: #b92b27; background: #ffe6e6; border-radius: 8px; padding: 6px 10px; margin: 0; font-size: 0.85rem; overflow-wrap: anywhere; }
+.edit-actions { display: flex; gap: 8px; }
+.btn-accent { background: var(--accent); border-color: var(--accent); color: #fff; }
+.btn-accent:hover { background: var(--accent-dark); border-color: var(--accent-dark); color: #fff; }
+
 /* --- 角色名稱依屬性上色 (不知道屬性的照一般顏色) --- */
 .el-fire { color: #d32f2f !important; }
 .el-water { color: #1565c0 !important; }

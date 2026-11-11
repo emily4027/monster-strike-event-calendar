@@ -119,3 +119,33 @@ test('抽數彙總：別名對應、帳號篩選、角色列出', () => {
     assert.deepEqual(C.accountNames(records), ['羽入', '梨花', '小號']);
     assert.equal(C.summarizePulls('壞資料', events).size, 0);
 });
+
+test('管理員編輯活動：只改這場活動的欄位，改名時記舊名稱，其他活動原樣保留', () => {
+    const raw = [
+        { event: '2024-09月 激獸神祭', date: '2024-09-11', tag: 'honke', aliases: ['更舊的名稱'], extra: 1 },
+        { event: '2024-01月 其他活動', date: '2024-01-05', tag: 'free' }
+    ];
+    const url = 'https://www.monster-strike.com.tw/news/20240910_01.html';
+    const out = C.applyEventEdit(raw, '2024-09月 激獸神祭', { event: '2024-09月 激獸神祭 (新角色)', date: '2024-09-11', endDate: '2024-09-14', tag: 'honke', source: url });
+    assert.deepEqual(out[0], { event: '2024-09月 激獸神祭 (新角色)', date: '2024-09-11', tag: 'honke', aliases: ['更舊的名稱', '2024-09月 激獸神祭'], extra: 1, endDate: '2024-09-14', source: url });
+    assert.deepEqual(out[1], raw[1]);
+    assert.equal(raw[0].event, '2024-09月 激獸神祭');   // 不改動傳入的清單
+    // 清掉結束日、標籤、網址；改回舊名稱時從 aliases 拿掉
+    const cleared = C.applyEventEdit(out, '2024-09月 激獸神祭 (新角色)', { event: '2024-09月 激獸神祭', date: '2024-09-11', endDate: '', tag: '', source: '' });
+    assert.deepEqual(cleared[0], { event: '2024-09月 激獸神祭', date: '2024-09-11', aliases: ['更舊的名稱', '2024-09月 激獸神祭 (新角色)'], extra: 1 });
+    // 改開始日後依日期重新排序 (新的在前)
+    const moved = C.applyEventEdit(raw, '2024-01月 其他活動', { event: '2024-01月 其他活動', date: '2025-01-05', tag: 'free' });
+    assert.equal(moved[0].event, '2024-01月 其他活動');
+});
+
+test('管理員編輯活動：不合理的修改會被擋下', () => {
+    const raw = [{ event: 'A', date: '2024-01-10' }, { event: 'B', date: '2024-01-11' }];
+    const edit = (over, name = 'A') => () => C.applyEventEdit(raw, name, { event: 'A', date: '2024-01-10', ...over });
+    assert.throws(edit({}, '不存在'), /找不到這場活動/);
+    assert.throws(edit({ event: ' ' }), /不能是空白/);
+    assert.throws(edit({ date: '2024-13-01' }), /開始日/);
+    assert.throws(edit({ endDate: '2024-01-09' }), /結束日/);
+    assert.throws(edit({ tag: 'x' }), /標籤/);
+    assert.throws(edit({ source: 'https://example.com/a' }), /官網/);
+    assert.throws(edit({ event: 'B' }), /已經有另一場活動/);
+});

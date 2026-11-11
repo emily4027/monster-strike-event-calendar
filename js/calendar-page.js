@@ -4,7 +4,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // =====================================================
     // 📅 行事曆頁
     //   1. 設定與狀態
-    //   2. 讀取資料 (活動清單、抽卡紀錄、卡池、名稱修正)：只讀，不寫入任何雲端文件
+    //   2. 讀取資料 (活動清單、抽卡紀錄、卡池、屬性、名稱修正)。唯一的寫入是管理員編輯活動 (shared/events)
     //   3. 渲染 (月曆格、手機清單)
     //   4. 活動詳細 (期間、這期卡池、我的抽卡紀錄)
     //   5. 啟動 (含從角色頁跳過來的 ?event=…&date=…)
@@ -40,6 +40,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const monthOf = (date) => ({ year: Number(date.slice(0, 4)), month: Number(date.slice(5, 7)) });
     let current = monthOf(today);
     let events = [];
+    let rawEvents = [];         // 雲端的原始清單 (管理員編輯時先在本機檢查用)
     let eventsSource = '';
     let records = [];
     let recordsSource = '';     // '' = 沒有紀錄可顯示、'local'、'cloud'
@@ -51,6 +52,8 @@ document.addEventListener('DOMContentLoaded', () => {
     let toastTimer = null;
     let modal = null;
     let openedEvent = null;     // 活動詳細開著時，卡池或紀錄讀完要重畫
+    let isAdmin = false;
+    let editing = false;        // 活動詳細正在編輯模式 (管理員)
 
     function showToast(message, type = 'success') {
         toast.textContent = message;
@@ -66,6 +69,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // =====================================================
     async function loadEvents() {
         const result = await S.loadEvents();
+        rawEvents = result.events;
         events = C.normalizeEvents(result.events);
         eventsSource = EVENTS_SOURCE_LABELS[result.source] || '';
     }
@@ -306,7 +310,97 @@ document.addEventListener('DOMContentLoaded', () => {
             addRow('來源', link);
         }
         const entry = summary.get(e.event);
-        modalBody.replaceChildren(info, renderPoolSection(e, entry), renderPullsSection(entry));
+        if (editing) return;   // 編輯中不重畫，免得把輸入到一半的內容洗掉
+        const parts = [info];
+        if (isAdmin) {
+            const bar = el('div', 'admin-bar');
+            const btn = el('button', 'btn btn-sm btn-outline-secondary', '✏️ 編輯活動');
+            btn.type = 'button';
+            btn.addEventListener('click', () => renderEditForm(e));
+            bar.appendChild(btn);
+            if (e.source && S.poolsForEventCount(pools, e.event) === 0) {
+                bar.appendChild(el('span', 'admin-hint', '已經有公告網址。爬蟲下次執行時會讀這篇公告整理卡池，開 PR 給你確認。'));
+            }
+            parts.push(bar);
+        }
+        modalBody.replaceChildren(...parts, renderPoolSection(e, entry), renderPullsSection(entry));
+    }
+
+    // 管理員：編輯這場活動 (名稱、期間、標籤、公告網址)。只寫入雲端的活動清單 shared/events
+    function renderEditForm(e) {
+        editing = true;
+        const form = el('form', 'event-edit-form');
+        const field = (label, input, hint) => {
+            const wrap = el('label', 'edit-field');
+            wrap.appendChild(el('span', 'edit-label', label));
+            wrap.appendChild(input);
+            if (hint) wrap.appendChild(el('span', 'edit-hint', hint));
+            form.appendChild(wrap);
+            return input;
+        };
+        const input = (type, value) => {
+            const node = el('input', 'form-control form-control-sm');
+            node.type = type;
+            node.value = value || '';
+            return node;
+        };
+        const name = field('活動名稱', input('text', e.event), '開頭的「YYYY-MM月」和卡池的關鍵字（例如「超獸神祭」）要保留，卡池才對得到。改名後舊名稱會自動記下來，舊紀錄不會斷。');
+        name.required = true;
+        const date = field('開始日', input('date', e.date));
+        date.required = true;
+        const endDate = field('結束日（可以留空）', input('date', e.endDate));
+        const tag = el('select', 'form-select form-select-sm');
+        [['', '未分類'], ...C.TAGS.map((t) => [t, C.TAG_LABELS[t]])].forEach(([value, text]) => tag.appendChild(new Option(text, value)));
+        tag.value = e.tag || '';
+        field('標籤', tag);
+        const source = field('官網公告網址（可以留空）', input('url', e.source),
+            '貼上那期轉蛋的官網公告網址。存檔後，爬蟲下次執行（每天中午，或到 GitHub Actions 手動執行）會讀這篇公告，把卡池整理成 PR 給你確認，並補上空的結束日。');
+        source.placeholder = 'https://www.monster-strike.com.tw/news/...';
+
+        const error = el('p', 'edit-error');
+        error.hidden = true;
+        form.appendChild(error);
+        const actions = el('div', 'edit-actions');
+        const save = el('button', 'btn btn-sm btn-accent', '存檔');
+        save.type = 'submit';
+        const cancel = el('button', 'btn btn-sm btn-outline-secondary', '取消');
+        cancel.type = 'button';
+        actions.append(save, cancel);
+        form.appendChild(actions);
+
+        const close = (target) => {
+            editing = false;
+            openedEvent = target;
+            modalTitle.textContent = C.displayName(target.event);
+            renderEventBody(target);
+        };
+        cancel.addEventListener('click', () => close(e));
+        form.addEventListener('submit', async (submitEvent) => {
+            submitEvent.preventDefault();
+            const edit = { event: name.value, date: date.value, endDate: endDate.value, tag: tag.value, source: source.value.trim() };
+            error.hidden = true;
+            save.disabled = true;
+            try {
+                C.applyEventEdit(rawEvents, e.event, edit);   // 先在本機檢查一次，錯誤可以馬上顯示
+                rawEvents = await S.saveEventEdit(e.event, edit);
+                events = C.normalizeEvents(rawEvents);
+                const updated = events.find((x) => x.event === edit.event.replace(/[ \t]{2,}/g, ' ').trim()) || e;
+                editing = false;
+                goToMonth(monthOf(updated.date));
+                close(updated);
+                showToast('已存檔');
+            } catch (err) {
+                console.error('[EDIT] 活動存檔失敗', err);
+                error.textContent = err && err.code === 'permission-denied'
+                    ? '沒有寫入權限（只有管理員可以編輯活動）。'
+                    : `存檔失敗：${(err && err.message) || err}`;
+                error.hidden = false;
+                save.disabled = false;
+            }
+        });
+        modalTitle.textContent = `編輯：${C.displayName(e.event)}`;
+        modalBody.replaceChildren(form);
+        name.focus();
     }
 
     function openEvent(e) {
@@ -316,7 +410,7 @@ document.addEventListener('DOMContentLoaded', () => {
         if (!modal) {
             const node = $('eventModal');
             modal = new window.bootstrap.Modal(node);
-            node.addEventListener('hidden.bs.modal', () => { openedEvent = null; });
+            node.addEventListener('hidden.bs.modal', () => { openedEvent = null; editing = false; });
         }
         modal.show();
     }
@@ -391,6 +485,14 @@ document.addEventListener('DOMContentLoaded', () => {
         const ok = await S.initAuth((user) => {
             currentUser = user;
             refreshRecords();
+            S.checkAdmin(user).then((admin) => {
+                if (currentUser !== user) return;
+                // 本機開發：網址加 ?previewAdmin 可以預覽管理員的畫面 (只是畫面，寫入權限仍由 Firestore 規則把關)
+                const preview = location.hostname === 'localhost' && new URLSearchParams(location.search).has('previewAdmin');
+                isAdmin = admin || preview;
+                $('admin-badge').hidden = !isAdmin;
+                if (openedEvent) renderEventBody(openedEvent);
+            });
         });
         if (!ok) S.setStatus('offline', eventsSource ? `${eventsSource}（Firebase 沒有載入，無法登入）` : 'Firebase 沒有載入');
     }

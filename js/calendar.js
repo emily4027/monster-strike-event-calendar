@@ -89,6 +89,46 @@
         return result.sort(compareEvents);
     }
 
+    // 管理員在行事曆編輯一場活動：在「雲端最新的原始清單」上套用修改，回傳新的清單 (不改動傳入的陣列)。
+    //   originalName：編輯前的活動名稱 (用來在清單裡找這場活動)
+    //   edit：{ event, date, endDate, tag, source }，endDate / tag / source 空字串 = 清掉
+    // 其他活動和這場活動沒編輯到的欄位 (aliases 等) 原樣保留。改名時舊名稱記進 aliases，
+    // 大家紀錄裡的舊名稱才會自動對應到新名稱 (和抽卡統計的做法相同)。
+    // 不合理的修改會丟出錯誤，訊息可以直接顯示給使用者
+    const OFFICIAL_NEWS_RE = /^https:\/\/www\.monster-strike\.com\.tw\/\S*$/;
+    function applyEventEdit(rawEvents, originalName, edit) {
+        const list = Array.isArray(rawEvents) ? rawEvents : [];
+        const from = normalizeName(originalName);
+        const index = list.findIndex((e) => e && normalizeName(e.event) === from);
+        if (index === -1) throw new Error('清單裡找不到這場活動，可能剛被改名或刪除了。請重新整理頁面再試一次');
+        const name = normalizeName(edit.event);
+        const date = String(edit.date || '');
+        const endDate = String(edit.endDate || '');
+        const tag = String(edit.tag || '');
+        const source = String(edit.source || '').trim();
+        if (!name) throw new Error('活動名稱不能是空白');
+        if (!isValidDate(date)) throw new Error('開始日的格式不正確');
+        if (endDate && (!isValidDate(endDate) || endDate < date)) throw new Error('結束日不能早於開始日');
+        if (tag && !TAGS.includes(tag)) throw new Error('標籤不正確');
+        if (source && !OFFICIAL_NEWS_RE.test(source)) throw new Error('公告網址要是官網的網址（https://www.monster-strike.com.tw/ 開頭）');
+        if (list.some((e, i) => i !== index && e && normalizeName(e.event) === name)) throw new Error(`已經有另一場活動叫「${name}」`);
+
+        const next = { ...list[index], event: name, date };
+        const set = (key, value) => { if (value) next[key] = value; else delete next[key]; };
+        set('endDate', endDate);
+        set('tag', tag);
+        set('source', source);
+        const aliases = new Set((Array.isArray(next.aliases) ? next.aliases : []).filter((x) => typeof x === 'string').map(normalizeName));
+        if (name !== from) aliases.add(from);
+        aliases.delete(name);
+        aliases.delete('');
+        set('aliases', aliases.size ? [...aliases] : null);
+        const events = list.map((e, i) => (i === index ? next : e));
+        // 和抽卡統計一樣，新的活動排前面
+        events.sort((x, y) => String((y && y.date) || '').localeCompare(String((x && x.date) || '')));
+        return events;
+    }
+
     const endOf = (e) => e.endDate || e.date;
 
     // 開始日早的在前；同一天時期間長的在前 (長條排在上面比較好看)，再依名稱
@@ -203,7 +243,7 @@
     const api = {
         TAGS, TAG_LABELS,
         isValidDate, addDays, daysBetween, addMonths, monthKey, todayString, monthWeeks,
-        normalizeEvents, compareEvents, eventsInRange, displayName, layoutWeek, formatPeriod,
+        normalizeEvents, applyEventEdit, compareEvents, eventsInRange, displayName, layoutWeek, formatPeriod,
         buildAliasMap, summarizePulls, accountNames
     };
     if (typeof module !== 'undefined' && module.exports) module.exports = api;
