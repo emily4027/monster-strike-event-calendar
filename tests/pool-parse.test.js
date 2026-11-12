@@ -441,4 +441,26 @@ test('屬性：五個屬性祭典每一期的名單也補上屬性 (公告沒有
     ] };
     const m = X.mergeElements({}, [], pools, {});
     assert.deepEqual(m.elements, { CALEzMA: '木', '舊木': '木' });
+    // 機率特別UP 的特別造型可能是別的屬性，不補
+    const special = { event: { event: 'E', date: '2026-08-01', source: 'u' }, data: { limited: [{ names: ['舊木', 'CALEzMA'], specials: ['CALEzMA'] }] } };
+    assert.deepEqual(X.mergeElements({}, [special], pools, {}).elements, { '舊木': '木' });
+});
+
+test('限定角色表前面「機率特別UP角色」裡註明轉出形態的特別造型，也算這期卡池', () => {
+    const table = '<table><tbody><tr><th>「世代 2018」限定角色</th></tr><tr><td>瑪娜　摩西</td></tr></tbody></table>';
+    const html = '<p>▼轉出機率特別UP角色：<br>瑪娜<br>享受年菜的慈愛天使 瑪娜（只會轉出「獸神化・改」形態）<br>'
+        + '團結人心的慈愛天使 瑪娜 MV（只會轉出「獸神化・改」形態）<br>＊（修正說明：）轉出的「團結人心的慈愛天使 瑪娜 MV」為已使用的狀態</p><p>▼限定角色：</p>' + table;
+    assert.deepEqual(X.parseLimitedLists(html)[0].names, ['瑪娜', '摩西', '享受年菜的慈愛天使 瑪娜', '團結人心的慈愛天使 瑪娜 MV']);
+    assert.deepEqual(X.parseLimitedLists(html)[0].specials, ['享受年菜的慈愛天使 瑪娜', '團結人心的慈愛天使 瑪娜 MV']);
+    // 沒有註明形態的不算：屬性祭典的機率 UP 角色、「（聖誕節造型）」這種說明
+    const plain = '<p>▼出現機率超UP角色：<br>雪之女王 芙麗茲</p><p>▼出現機率特別UP角色：<br>・弁財天<br>・弁財天（聖誕節造型）</p>' + table;
+    assert.deepEqual(X.parseLimitedLists(plain)[0].names, ['瑪娜', '摩西']);
+    // 前一張表的機率 UP 名單不會算到下一張表
+    const two = html + '<p>▼限定角色：</p>' + table.replace('2018', '2017');
+    assert.deepEqual(X.parseLimitedLists(two).map((l) => l.names.length), [4, 2]);
+    assert.deepEqual(X.parseLimitedLists('<p>▼轉出機率特別UP角色：<br>惡魔女神 阿波羅（會以獸神化形態轉出）</p>' + table)[0].names, ['瑪娜', '摩西', '惡魔女神 阿波羅']);
+    // 說明文字 (「新年造型 潘朵拉」)、表裡已經有的同一隻 (官網漏字) 不加
+    const skip = '<p>▼轉出機率特別UP角色：<br>新年造型 潘朵拉（轉出時會以獸神化・改形態現身）<br>開啟天國者 MV（只會轉出「獸神化・改」形態）</p>'
+        + table + '<table><tbody><tr><th>轉出對象期間限定角色</th></tr><tr><td>開啟天國者 烏列爾 MV　另一隻</td></tr></tbody></table>';
+    assert.deepEqual(X.parseLimitedLists(skip).map((l) => l.names), [['瑪娜', '摩西'], ['開啟天國者 烏列爾 MV', '另一隻']]);
 });

@@ -2,6 +2,8 @@
 //
 // 規則 (使用者確認過)：
 //   - 祭典等本家轉蛋：公告表格「「X」限定角色」「轉出對象限定角色」「轉出對象期間限定角色」下面的角色都算這期卡池
+//   - 限定角色表前面「▼轉出機率特別UP角色：」裡註明轉出形態的角色 (「享受年菜的慈愛天使 瑪娜（只會轉出「獸神化・改」形態）」)
+//     是那期才有的特別造型，表格沒列，也算這期卡池
 //   - 季節限定等新系列轉蛋 (聖誕節、暑假、新娘、學院…)：公告沒有限定角色表，角色寫在「新登場角色介紹」
 //     或「「X」轉蛋活動現身」段落下面的小標題 (「★6 稱號 名稱α（獸神化後）」)，取獸神化前的名稱
 //   - 合作活動：標題有「轉蛋「…」」的段落裡的角色表，只收稀有度「★6（獸神化前）」的角色
@@ -125,6 +127,22 @@ const LIMITED_HEADER_RE = /^(?:[^「」：:]*「([^「」]+)」|轉出對象的?
 const GACHA_EVENT_HEADING_RE = /「([^「」]+)」\s*轉蛋活動/;
 const ELEMENT_HEADER_RE = /^([火水木光闇])屬性$/;
 
+// 限定角色表前面的「▼轉出機率特別UP角色：」名單裡，註明轉出形態的名稱 (那期才有的特別造型，表格裡沒有)：
+//   「享受年菜的慈愛天使 瑪娜（只會轉出「獸神化・改」形態）」「惡魔女神 阿波羅（會以獸神化形態轉出）」→ 名稱
+//   沒有註明形態的不算 (屬性祭典的機率 UP 角色是一般角色；「弁財天（聖誕節造型）」是說明不是名稱)；
+//   「新年造型 潘朵拉」這種寫法是說明、不是角色名稱，也不算
+const FORM_NOTE_RE = /^[・･\s]*(.+?)\s*[（(][^（）()]*(?:形態|型態)[^（）()]*[）)]$/;
+function rateUpSpecials(leadHtml) {
+    const text = decodeEntities(String(leadHtml).replace(/<br\s*\/?>|<\/p>|<\/div>|<\/li>/gi, '\n').replace(/<[^>]+>/g, '')).replace(/\u00a0/g, ' ');
+    const at = text.lastIndexOf('UP角色');
+    if (at === -1) return [];
+    return text.slice(at).split('▼')[0].split('\n').slice(1)
+        .map((line) => line.trim().match(FORM_NOTE_RE))
+        .filter(Boolean)
+        .map((m) => m[1].replace(/\s+/g, ' ').trim())
+        .filter((name) => !/^\S*造型\s/.test(name));
+}
+
 // 限定角色表：
 //   limited：[{ header, poolName (「X」限定角色的 X，沒有時空字串), names }]
 //   elements：{ 木: [...], 闇: [...] }，「木屬性」「闇屬性」這種依屬性分的名單
@@ -134,13 +152,18 @@ function parseLimitedTables(html) {
     const elements = {};
     const elementOf = {};   // 名稱 → 屬性 (文字顏色、或「木屬性」這種表頭)
     let headingPool = '';   // 前面最近的「「X」轉蛋活動…」標題
+    const specials = [];    // 表格前面「機率特別UP角色」裡的特別造型
+    let previousEnd = 0;
     for (const token of String(html).matchAll(/<(h[1-6])\b[^>]*>([\s\S]*?)<\/\1>|<table\b[\s\S]*?<\/table>/gi)) {
+        const lead = String(html).slice(previousEnd, token.index);
+        previousEnd = token.index + token[0].length;
         if (token[1]) {
             const g = plainText(token[2]).match(GACHA_EVENT_HEADING_RE);
             headingPool = g ? g[1].trim() : '';
             continue;
         }
         const table = token[0];
+        const before = limited.length;
         let current = null;
         for (const cells of tableRows(table)) {
             if (cells.length === 0) continue;
@@ -168,8 +191,20 @@ function parseLimitedTables(html) {
                 });
             }
         }
+        // 這張表前面的特別造型：記在這張表的第一份名單，全部讀完再加 (見下面)
+        if (limited[before]) specials.push({ list: limited[before], names: rateUpSpecials(lead) });
     }
-    return { limited: limited.filter((l) => l.names.length > 0), elements, elementOf };
+    // 特別造型加在名單最後。公告的名單裡已經有同一隻時不加：名稱相同，或這個名稱的每一段都在某個名稱裡
+    // (官網漏字：「賜予神之光開啟天國者 MV」，後面的期間限定角色表是「賜予神之光開啟天國者 烏列爾 MV」)
+    const listed = limited.flatMap((l) => l.names);
+    const known = (n) => listed.some((x) => poolKey(x) === poolKey(n) || n.split(' ').every((part) => x.split(' ').includes(part)));
+    specials.forEach(({ list, names }) => names.forEach((n) => {
+        if (known(n)) return;
+        list.names.push(n);
+        list.specials = [...(list.specials || []), n];
+        listed.push(n);
+    }));
+    return { limited: limited.filter((l) => l.names.length > 0), elements, elementOf };   // (specials 已經加進 names)
 }
 const parseLimitedLists = (html) => parseLimitedTables(html).limited;
 
@@ -806,9 +841,11 @@ function mergeElements(elements, items, poolsData, nameOverrides) {
     byDate.forEach((item) => {
         Object.entries((item.data && item.data.elementOf) || {}).forEach(([name, element]) => put(all[name] || name, element, item));
     });
-    // 五個屬性祭典每一期的名單 (公告的名單沒有用顏色標屬性，例如新角色「CALEzMA」)：還沒有屬性的才補
+    // 五個屬性祭典每一期的名單 (公告的名單沒有用顏色標屬性，例如新角色「CALEzMA」)：還沒有屬性的才補。
+    // 機率特別UP 的特別造型不算 (「水祭 Zero Gravity LIVE!!」的特別造型是別的屬性)
+    const specialKeys = new Set(items.flatMap((item) => ((item.data && item.data.limited) || []).flatMap((l) => l.specials || [])).map(poolKey));
     readPools(poolsData).filter((p) => p.kind === 'limited' && p.months.length > 0 && ELEMENT_OF_POOL[p.pool])
-        .forEach((p) => p.chars.forEach((c) => put(c, ELEMENT_OF_POOL[p.pool])));
+        .forEach((p) => p.chars.filter((c) => !specialKeys.has(poolKey(c))).forEach((c) => put(c, ELEMENT_OF_POOL[p.pool])));
     // ★4 等舊版本的屬性：只補還沒有的名稱，不一致時不用標出來
     byDate.forEach((item) => {
         Object.entries((item.data && item.data.elementOfLow) || {}).forEach(([name, element]) => put(all[name] || name, element, null));
