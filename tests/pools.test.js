@@ -195,3 +195,12 @@ test('限定角色查詢：預設版本 (官網名單) 優先，since 版本裡�
     assert.equal(limitedOf('新角色乙'), '激獸神祭');
     assert.equal(limitedOf('新角色甲'), '彩獸神祭');   // 同時出現時名單短的優先
 });
+
+test('複刻卡池的 label：讀進來，沒有時是空字串', () => {
+    const { readPools } = require('../pools.js');
+    const P = readPools({ pools: [
+        { pool: 'A・複刻 1', kind: 'collab', rerun: true, label: ' 第1彈 ', chars: ['x'] },
+        { pool: 'A', kind: 'collab', chars: ['y'] }
+    ] });
+    assert.deepEqual(P.map((p) => p.label), ['第1彈', '']);
+});

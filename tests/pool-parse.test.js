@@ -343,3 +343,102 @@ test('一篇公告同時開好幾個卡池 (怪物彈珠世代)：各卡池各�
     assert.equal(poolsForEvent(readPools(next.data), '2026-12月 怪物彈珠世代').length, 2);
     assert.equal(X.planPoolChanges(next.data, [item('2026-12月 怪物彈珠世代', '2026-12-10', 'honke', html)]).changes.length, 0);
 });
+
+// ---- 季節限定 (小標題的名單)、新年特別版、複刻的標題 ----
+const SEASONAL = `
+<p>三位新登場的角色「莫斯科蘿兒α」、「達太喵α」跟「Two for all α」登場！「奈特梅雅α」也來了。</p>
+<h4>新系列轉蛋活動</h4>
+<h4>新登場角色介紹！</h4>
+<h5>★6 演技出色的婚禮之王 達太喵α<br>（獸神化後）</h5>
+<h5>★6 爽朗的半獸新娘 莫斯科蘿兒α<br>（獸神化後）</h5>
+<h5></h5>
+<h5>★6 盛夏的全力偶像 Two for all α<br>（獸神化後）</h5>
+<h5>★6 奈特梅雅α：聖誕風格<br>（獸神化後）</h5>
+<h5>【新技能登場！】</h5>
+<h4>「悄聲接近全新領域的探險貓」偶爾會出現！</h4>
+<h5>★6 入迷的喵險家 柯妮修<br>（獸神化後）</h5>`;
+
+test('季節限定：小標題的獸神化後名稱 → 獸神化前的名稱 (用內文「」引用的名稱確認)', () => {
+    const lists = X.parseHeadingLists(SEASONAL);
+    assert.equal(lists.length, 1);
+    assert.equal(lists[0].poolName, '');
+    assert.deepEqual(lists[0].names, ['達太喵α', '莫斯科蘿兒α', 'Two for all α', '奈特梅雅α']);
+    assert.deepEqual(lists[0].guessed, []);
+    // 內文沒有引用的名稱：用最後一段，記成推測的
+    const g = X.parseHeadingLists('<h4>新登場角色介紹！</h4><h5>★6 心靈相通的宇宙冒險家 鄭和（獸神化後）</h5>');
+    assert.deepEqual([g[0].names, g[0].guessed], [['鄭和'], ['鄭和']]);
+    // 有限定角色表的公告不看小標題
+    assert.equal(X.extractPoolData(FESTIVAL + SEASONAL).limited.every((l) => !l.fromHeadings), true);
+});
+
+test('季節限定：沒有對到既有卡池時，用活動名稱新增限定卡池 (只在那個月)', () => {
+    const { readPools, poolsForEvent } = require('../pools.js');
+    const r = X.planPoolChanges(POOLS(), [item('2024-06月 祝宴！怪物彈珠新娘 4', '2024-06-02', 'honke', SEASONAL)]);
+    assert.deepEqual(r.changes.map((c) => [c.type, c.pool, c.month, c.chars]),
+        [['new-limited', '祝宴！怪物彈珠新娘 4', '2024-06', ['達太喵α', '莫斯科蘿兒α', 'Two for all α', '奈特梅雅α']]]);
+    const P = readPools(r.data);
+    assert.equal(poolsForEvent(P, '2024-06月 祝宴！怪物彈珠新娘 4').length, 1);
+    assert.deepEqual(poolsForEvent(P, '2025-06月 祝宴！怪物彈珠新娘 4'), []);
+});
+
+test('季節限定復刻：一篇公告好幾個轉蛋，只用活動名稱點名的那個', () => {
+    const html = '<p>「瑪爾大α」「格林兄弟α」</p>'
+        + '<h4>「復刻！聖誕節 2021」轉蛋活動現身！</h4><h5>★6 飛過夜空的聖誕聖女 瑪爾大α（獸神化後）</h5>'
+        + '<h4>「復刻！聖誕節 2019」轉蛋活動現身！</h4><h5>★6 聖誕節冒險譚 格林兄弟α（獸神化・改）</h5>';
+    assert.deepEqual(X.parseHeadingLists(html).map((l) => [l.poolName, l.names]),
+        [['復刻！聖誕節 2021', ['瑪爾大α']], ['復刻！聖誕節 2019', ['格林兄弟α']]]);
+    const r = X.planPoolChanges(POOLS(), [item('2023-12月 復刻！聖誕節 2021', '2023-12-03', 'honke', html)]);
+    assert.deepEqual(r.changes.map((c) => [c.type, c.pool, c.chars]), [['new-limited', '復刻！聖誕節 2021', ['瑪爾大α']]]);
+});
+
+test('限定角色表頭：前面有文字的「新年特別版「超獸神祭」限定角色」、只寫「限定角色」(卡池名稱看前面的標題)', () => {
+    const table = (th, td) => `<table><tbody><tr><th>${th}</th></tr><tr><td>${td}</td></tr></tbody></table>`;
+    assert.deepEqual(X.parseLimitedLists(table('新年特別版「超獸神祭」限定角色', '正宗　八雲：荒神之後裔 MV　凜寧')),
+        [{ header: '新年特別版「超獸神祭」限定角色', poolName: '超獸神祭', names: ['正宗', '八雲：荒神之後裔 MV', '凜寧'] }]);
+    const live = X.parseLimitedLists('<h4>「Zero Gravity LIVE!!」轉蛋活動開幕！</h4>' + table('限定角色', '甘露　告別重力')
+        + '<h4>儲值活動</h4>' + table('限定角色', '不相干'));
+    assert.deepEqual(live.map((l) => [l.poolName, l.names]), [['Zero Gravity LIVE!!', ['甘露', '告別重力']], ['', ['不相干']]]);
+    assert.deepEqual(X.parseLimitedLists(table('額外附贈', '甲　乙')), []);
+});
+
+test('活動名稱對不到表頭寫的卡池：這期的版本加上 "=活動名稱"', () => {
+    const { readPools, poolsForEvent } = require('../pools.js');
+    const pools = POOLS();
+    const pool = pools.pools.find((p) => p.kind === 'limited').pool;
+    const html = `<table><tbody><tr><th>「${pool}」限定角色</th></tr><tr><td>新角色甲　新角色乙</td></tr></tbody></table>`;
+    const r = X.planPoolChanges(pools, [item('2026-07月 世足特別轉蛋', '2026-07-04', 'honke', html)]);
+    assert.equal(r.changes.length, 1);
+    assert.deepEqual(poolsForEvent(readPools(r.data), '2026-07月 世足特別轉蛋').map((p) => [p.pool, p.chars]), [[pool, ['新角色甲', '新角色乙']]]);
+});
+
+test('合作複刻：表格前面寫的第幾彈、其他轉蛋段落的名稱，存成複刻卡池的 label', () => {
+    const { readPools, poolsForEvent } = require('../pools.js');
+    const rows = (names) => '<table><tbody><tr><th>角色</th><th>稀有度</th><th>屬性</th></tr>'
+        + names.map((n) => `<tr><td>${n}</td><td>★6（獸神化前）</td><td>火</td></tr>`).join('') + '</tbody></table>';
+    const html = '<h2>轉蛋「測試作品」開跑！</h2><p>▼轉蛋活動期間：<br>10月1日<br>▼第2彈合作活動角色：</p>' + rows(['新甲', '新乙'])
+        + '<p>▼第1彈合作活動角色：</p>' + rows(['舊甲', '舊乙'])
+        + '<h2>轉蛋「聖誕節 × 測試作品」再度登場！</h2><p>▼轉出對象的合作活動角色：</p>' + rows(['聖誕甲α']);
+    const sections = X.parseCollabSections(html);
+    assert.deepEqual(sections.map((s) => s.labels), [['第2彈', '第1彈'], ['']]);
+    const r = X.planPoolChanges({ pools: [] }, [item('2026-10月 測試作品 第2彈', '2026-10-01', 'collab', html)]);
+    assert.deepEqual(r.data.pools.map((p) => [p.pool, p.label || '', p.chars]), [
+        ['測試作品', '', ['新甲', '新乙']],
+        ['測試作品・複刻 1', '第1彈', ['舊甲', '舊乙']],
+        ['測試作品・複刻 2', '聖誕節 × 測試作品', ['聖誕甲α']]
+    ]);
+    assert.deepEqual(poolsForEvent(readPools(r.data), '2026-10月 測試作品 第2彈').map((p) => p.label), ['', '第1彈', '聖誕節 × 測試作品']);
+    // 舊資料的複刻卡池沒有 label：名單相同也補上
+    const old = { pools: r.data.pools.map(({ label, ...p }) => p) };
+    const again = X.planPoolChanges(old, [item('2026-10月 測試作品 第2彈', '2026-10-01', 'collab', html)]);
+    assert.deepEqual(again.changes.map((c) => [c.type, c.label]), [['update-rerun', '第1彈'], ['update-rerun', '聖誕節 × 測試作品']]);
+    assert.equal(X.planPoolChanges(again.data, [item('2026-10月 測試作品 第2彈', '2026-10-01', 'collab', html)]).changes.length, 0);
+});
+
+test('屬性：五個屬性祭典每一期的名單也補上屬性 (公告沒有用顏色標的新角色)', () => {
+    const pools = { pools: [
+        { pool: '綠色幻想', kind: 'limited', chars: ['舊木'] },
+        { pool: '綠色幻想', kind: 'limited', months: ['2026-08'], chars: ['舊木', 'CALEzMA'] }
+    ] };
+    const m = X.mergeElements({}, [], pools, {});
+    assert.deepEqual(m.elements, { CALEzMA: '木', '舊木': '木' });
+});

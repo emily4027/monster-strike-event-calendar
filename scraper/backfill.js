@@ -18,7 +18,8 @@ const USER_AGENT = 'monster-strike-gacha-data-bot (+https://github.com/emily4027
 const REQUEST_DELAY_MS = 1000;
 const MAX_LIST_PAGES = 200;
 // 標題看起來可能是轉蛋公告的才讀內文 (其他公告：維護、商店、冒險…)
-const GACHA_TITLE_RE = /轉蛋|祭|合作|×|限定|世代|精選|幻想|遊宴|火焰之星|starlight|midnight|新角色/i;
+//   季節限定的公告標題沒有「轉蛋」(「「怪物彈珠聖誕節2024」溫暖登場！」)
+const GACHA_TITLE_RE = /轉蛋|祭|合作|×|限定|世代|精選|幻想|遊宴|火焰之星|starlight|midnight|新角色|聖誕|暑假|新娘|學院/i;
 
 const sleep = (ms) => new Promise((resolve) => setTimeout(resolve, ms));
 const cacheIndex = process.argv.indexOf('--cache');
@@ -80,8 +81,11 @@ function findArticle(parsed, event) {
     return parsed
         .filter((p) => days(p) <= MATCH_DAYS)
         .filter((p) => {
-            // 公告判斷出的轉蛋名稱，或公告裡任何一個轉蛋段落的名稱
-            const names = [p.scraped.event, ...((p.data && p.data.collab) || []).map((s) => s.gachaName).filter(Boolean)];
+            // 公告判斷出的轉蛋名稱、公告裡任何一個轉蛋段落的名稱，或限定角色表寫的卡池名稱
+            //   (新年特別版的公告判斷出的名稱是「新年！特別額外附贈 超獸神祭」，表頭是「超獸神祭」)
+            const names = [p.scraped.event,
+                ...((p.data && p.data.collab) || []).map((s) => s.gachaName),
+                ...((p.data && p.data.limited) || []).map((l) => l.poolName)].filter(Boolean);
             return names.some((n) => {
                 const k = matchKey(n);
                 return k && key && (k.includes(key) || key.includes(k));
@@ -111,6 +115,33 @@ async function listArticles(cutoff) {
     }
     process.stdout.write('\n');
     return all.filter((i) => (urlDate(i.url) || '9999') >= cutoff);
+}
+
+// 活動清單 + 讀好的公告 → 卡池資料 { items, flags }
+function buildItems(events, parsed, since) {
+    const items = [];
+    const matched = new Set();
+    events.forEach((event) => {
+        const found = findArticle(parsed, event);
+        if (!found) return;
+        matched.add(event.event);
+        items.push({ event: { event: event.event, date: event.date, tag: event.tag, source: found.scraped.source }, data: found.data });
+    });
+
+    // 活動清單裡沒有的本家祭典也記下那期的名單 (只加進已經有的卡池，不新增卡池、不標出來)，
+    // 之後的合作祭典公告漏寫本家限定角色時，才有「之前最近一期」的名單可以沿用
+    const used = new Set(items.map((i) => i.event.source));
+    parsed.filter((p) => p.scraped.tag === 'honke' && p.scraped.date >= since && !used.has(p.scraped.source) && p.data.limited.length > 0)
+        .forEach((p) => items.push({
+            event: { event: p.scraped.event, date: p.scraped.date, tag: 'honke', source: p.scraped.source, unlogged: true },
+            data: p.data
+        }));
+
+    // 對不上公告的活動列出來，不用猜的
+    const flags = events.filter((e) => !matched.has(e.event))
+        .sort((a, b) => a.date.localeCompare(b.date))
+        .map((e) => ({ event: e.event, source: '', message: '找不到對應的官網公告（名稱或開始日和公告不同，或官網沒有另外發公告），卡池沒有更新' }));
+    return { items, flags, matched: matched.size };
 }
 
 async function main() {
@@ -146,30 +177,9 @@ async function main() {
     process.stdout.write('\n');
     console.log(`轉蛋公告 ${parsed.length} 篇`);
 
-    const items = [];
-    const matched = new Set();
-    events.forEach((event) => {
-        const found = findArticle(parsed, event);
-        if (!found) return;
-        matched.add(event.event);
-        items.push({ event: { event: event.event, date: event.date, tag: event.tag, source: found.scraped.source }, data: found.data });
-    });
-
-    // 活動清單裡沒有的本家祭典也記下那期的名單 (只加進已經有的卡池，不新增卡池、不標出來)，
-    // 之後的合作祭典公告漏寫本家限定角色時，才有「之前最近一期」的名單可以沿用
-    const used = new Set(items.map((i) => i.event.source));
-    parsed.filter((p) => p.scraped.tag === 'honke' && p.scraped.date >= since && !used.has(p.scraped.source) && p.data.limited.length > 0)
-        .forEach((p) => items.push({
-            event: { event: p.scraped.event, date: p.scraped.date, tag: 'honke', source: p.scraped.source, unlogged: true },
-            data: p.data
-        }));
-
-    // 對不上公告的活動列出來，不用猜的
-    const flags = events.filter((e) => !matched.has(e.event))
-        .sort((a, b) => a.date.localeCompare(b.date))
-        .map((e) => ({ event: e.event, source: '', message: '找不到對應的官網公告（名稱或開始日和公告不同，或官網沒有另外發公告），卡池沒有更新' }));
+    const { items, flags, matched } = buildItems(events, parsed, since);
     fs.writeFileSync(out, JSON.stringify({ items, flags }, null, 2));
-    console.log(`對應到 ${matched.size} 場活動，對不上 ${flags.length} 場；另外記下清單沒有的祭典 ${items.length - matched.size} 篇；存到 ${out}`);
+    console.log(`對應到 ${matched} 場活動，對不上 ${flags.length} 場；另外記下清單沒有的祭典 ${items.length - matched} 篇；存到 ${out}`);
 }
 
 if (require.main === module) {
@@ -179,4 +189,4 @@ if (require.main === module) {
     });
 }
 
-module.exports = { fromFirestore };
+module.exports = { fromFirestore, findArticle, buildItems, GACHA_TITLE_RE };

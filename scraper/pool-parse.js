@@ -2,6 +2,8 @@
 //
 // 規則 (使用者確認過)：
 //   - 祭典等本家轉蛋：公告表格「「X」限定角色」「轉出對象限定角色」「轉出對象期間限定角色」下面的角色都算這期卡池
+//   - 季節限定等新系列轉蛋 (聖誕節、暑假、新娘、學院…)：公告沒有限定角色表，角色寫在「新登場角色介紹」
+//     或「「X」轉蛋活動現身」段落下面的小標題 (「★6 稱號 名稱α（獸神化後）」)，取獸神化前的名稱
 //   - 合作活動：標題有「轉蛋「…」」的段落裡的角色表，只收稀有度「★6（獸神化前）」的角色
 //   - 卡池依每期公告各自一個版本：限定卡池的版本記下它是哪幾個月 (months)，活動只用自己那個月的版本。
 //     名單和某一期相同時把月份加進那個版本；同一個月已經有不同名單的版本時不寫，只標出來
@@ -116,8 +118,11 @@ function cellElements(html) {
 }
 
 // ---- 解析公告 ----
-// 「「彩獸神祭」限定角色」「轉出對象限定角色」「轉出對象期間限定角色」「轉出對象的激獸神祭限定角色：」「轉出對象的期間限定角色」
-const LIMITED_HEADER_RE = /^(?:「([^「」]+)」|轉出對象的?([^「」：:]*?))(?:期間)?限定角色[：:]?$/;
+// 「「彩獸神祭」限定角色」「新年特別版「超獸神祭」限定角色」「轉出對象限定角色」「轉出對象期間限定角色」
+// 「轉出對象的激獸神祭限定角色：」「轉出對象的期間限定角色」，或只寫「限定角色」
+const LIMITED_HEADER_RE = /^(?:[^「」：:]*「([^「」]+)」|轉出對象的?([^「」：:]*?))?(?:期間)?限定角色[：:]?$/;
+// 只寫「限定角色」的表：卡池名稱看前面最近的標題 (「「Zero Gravity LIVE!!」轉蛋活動開幕！」)
+const GACHA_EVENT_HEADING_RE = /「([^「」]+)」\s*轉蛋活動/;
 const ELEMENT_HEADER_RE = /^([火水木光闇])屬性$/;
 
 // 限定角色表：
@@ -128,7 +133,14 @@ function parseLimitedTables(html) {
     const limited = [];
     const elements = {};
     const elementOf = {};   // 名稱 → 屬性 (文字顏色、或「木屬性」這種表頭)
-    for (const table of String(html).match(/<table\b[\s\S]*?<\/table>/gi) || []) {
+    let headingPool = '';   // 前面最近的「「X」轉蛋活動…」標題
+    for (const token of String(html).matchAll(/<(h[1-6])\b[^>]*>([\s\S]*?)<\/\1>|<table\b[\s\S]*?<\/table>/gi)) {
+        if (token[1]) {
+            const g = plainText(token[2]).match(GACHA_EVENT_HEADING_RE);
+            headingPool = g ? g[1].trim() : '';
+            continue;
+        }
+        const table = token[0];
         let current = null;
         for (const cells of tableRows(table)) {
             if (cells.length === 0) continue;
@@ -137,7 +149,7 @@ function parseLimitedTables(html) {
                 const m = header.match(LIMITED_HEADER_RE);
                 const e = header.match(ELEMENT_HEADER_RE);
                 if (m) {
-                    current = { header, poolName: (m[1] || m[2] || '').trim(), names: [] };
+                    current = { header, poolName: (m[1] || m[2] || (header.replace(/[：:]$/, '') === '限定角色' ? headingPool : '') || '').trim(), names: [] };
                     limited.push(current);
                 } else if (e) {
                     elements[e[1]] = elements[e[1]] || [];
@@ -161,6 +173,53 @@ function parseLimitedTables(html) {
 }
 const parseLimitedLists = (html) => parseLimitedTables(html).limited;
 
+// 季節限定等新系列轉蛋的角色：寫在段落下面的小標題，不是表格
+//   段落：「新登場角色介紹！」(卡池名稱看活動名稱)，或「「復刻！怪物彈珠聖誕節 2021」轉蛋活動現身！」(一篇公告好幾個轉蛋)
+//   小標題：「★6 演技出色的婚禮之王 達太喵α（獸神化後）」→ 獸神化前的名稱「達太喵α」
+//   → [{ header, poolName, names, guessed: [推測的名稱], fromHeadings: true }]
+const NEW_CHARS_HEADING_RE = /新登場角色介紹/;
+const EVOLVED_HEADING_RE = /^★6\s*(.+?)\s*[（(]\s*(?:獸神化後|獸神化・改|真獸神化)\s*[）)]$/;
+function parseHeadingLists(html) {
+    const text = plainText(html);
+    const quoted = new Set([...text.matchAll(/「([^「」]+)」/g)].map((m) => poolKey(m[1])));
+    const lists = [];
+    let current = null;
+    let level = 0;
+    for (const token of String(html).matchAll(/<h([1-6])\b[^>]*>([\s\S]*?)<\/h\1>/gi)) {
+        const depth = Number(token[1]);
+        const heading = plainText(token[2]);
+        const group = NEW_CHARS_HEADING_RE.test(heading) ? ['']
+            : heading.match(/^「([^「」]+)」\s*轉蛋活動(?:現身|開幕|登場|開跑)/);
+        if (group) {
+            current = { header: heading, poolName: (group[1] || '').trim(), names: [], guessed: [], fromHeadings: true };
+            level = depth;
+            lists.push(current);
+            continue;
+        }
+        if (!current) continue;
+        if (depth <= level) { current = null; continue; }
+        const m = heading.match(EVOLVED_HEADING_RE);
+        if (!m) continue;
+        const base = baseName(m[1], quoted);
+        current.names.push(base.name);
+        if (!base.verified) current.guessed.push(base.name);
+    }
+    return lists.filter((l) => l.names.length > 0);
+}
+
+// 獸神化後的名稱 (「稱號 名稱」「名稱：造型」) → 獸神化前的名稱
+//   用公告內文裡「」引用過的名稱確認 (「達太喵α」「Two for all α」)；內文沒引用時用最後一段，verified = false
+function baseName(full, quoted) {
+    const parts = full.replace(/\s+/g, ' ').trim().split(' ');
+    const candidates = [];
+    for (let i = parts.length - 1; i >= 0; i--) candidates.push(parts.slice(i).join(' '));
+    if (/[：:]/.test(full)) candidates.push(full.split(/[：:]/)[0].trim());
+    const found = candidates.find((c) => !/^[αβ]$/.test(c) && quoted.has(poolKey(c)));
+    if (found) return { name: found, verified: true };
+    const last = /^[αβ]$/.test(parts[parts.length - 1]) && parts.length > 1 ? parts.slice(-2).join(' ') : parts[parts.length - 1];
+    return { name: last, verified: false };
+}
+
 // 轉蛋段落的標題：「轉蛋「X」」「轉蛋《X》」，或沒有名稱的「…轉蛋開跑」(目錄那種有換行的標題不算)
 const GACHA_NAME_RE = /轉蛋(?:「([^「」]+)」|《([^《》]+)》)/;
 function gachaHeading(inner) {
@@ -177,6 +236,7 @@ function gachaHeading(inner) {
 // 合作活動的角色表：轉蛋段落裡，表頭有「角色…」和「稀有度」的表格
 //   → [{ heading, gachaName, rows: [{ name, rarity, element }], tables: [[row...]] }] (一個段落一筆)
 //   tables：段落裡每張角色表各一組 (第一張是這期的新角色，後面的是同時複刻的前幾彈)
+//   labels：每張表前面寫的第幾彈 (「▼第1彈合作活動角色：」→「第1彈」)，沒寫時空字串
 //   轉蛋標題 (任何層級) 開始新的段落；其他標題只有層級不深於第一個轉蛋標題時才結束段落
 function parseCollabSections(html) {
     const tokens = [...String(html).matchAll(/<(h[2-6])\b[^>]*>([\s\S]*?)<\/\1>|<table\b[\s\S]*?<\/table>/gi)];
@@ -186,11 +246,14 @@ function parseCollabSections(html) {
 
     const sections = [];
     let section = null;
+    let previousEnd = 0;
     for (const t of tokens) {
+        const lead = String(html).slice(previousEnd, t.index);
+        previousEnd = t.index + t[0].length;
         if (t[1]) {
             const g = gachaHeading(t[2]);
             if (g) {
-                section = { ...g, rows: [], tables: [] };
+                section = { ...g, rows: [], tables: [], labels: [] };
                 sections.push(section);
             } else if (Number(t[1][1]) <= level) {
                 section = null;
@@ -214,10 +277,20 @@ function parseCollabSections(html) {
         });
         if (table.length) {
             section.tables.push(table);
+            section.labels.push(waveLabel(lead));
             section.rows.push(...table);
         }
     }
     return sections.filter((s) => s.rows.length > 0);
+}
+
+// 角色表前面最後一個「▼…：」說明裡的第幾彈 (剛好寫一個時才算)
+function waveLabel(leadHtml) {
+    const text = plainText(leadHtml).normalize('NFKC');
+    const last = text.slice(text.lastIndexOf('▼') + 1);
+    if (text.lastIndexOf('▼') === -1) return '';
+    const waves = [...new Set([...last.matchAll(/第\s*(\d+)\s*彈/g)].map((m) => m[1]))];
+    return waves.length === 1 ? `第${waves[0]}彈` : '';
 }
 
 // 「★6（獸神化前）」「（獸神化前）★6」「獸神化前（★6）」都算
@@ -229,7 +302,10 @@ const isStar6Base = (rarity) => {
 // 公告 → 卡池需要的資料 (存起來，之後再和 pools.json 比對)
 //   elementOf：{ 名稱: 屬性 }，來自限定角色名單的文字顏色、屬性表頭、合作角色表的屬性欄
 function extractPoolData(html) {
-    const { limited, elements, elementOf } = parseLimitedTables(html);
+    const tables = parseLimitedTables(html);
+    const { elements, elementOf } = tables;
+    // 沒有限定角色表的公告 (季節限定等新系列轉蛋) 才看小標題的名單
+    const limited = tables.limited.length > 0 ? tables.limited : parseHeadingLists(html);
     const collab = parseCollabSections(html);
     // 合作角色表：★6（獸神化前）的屬性優先 (卡池收的是這些)；同名的★4 等舊版本放在 elementOfLow，
     // 只有屬性表還沒有這個名稱時才用。同一篇公告裡同名的以先出現的為準
@@ -356,7 +432,8 @@ const result = (data, change, flags) => ({ data, changes: change ? [change] : []
 
 // 合作卡池：轉蛋段落裡「★6（獸神化前）」的角色
 //   這期的卡池 = 選到的段落的第一張表；同一段落後面的表、以及其他轉蛋段落 (「轉蛋「鬼滅之刃」再度登場！」)
-//   是同時複刻的前幾彈，每張表各存成一個「主卡池名稱・複刻 N」的卡池 (rerun: true)，在畫面上分開顯示
+//   是同時複刻的前幾彈，每張表各存成一個「主卡池名稱・複刻 N」的卡池 (rerun: true)，在畫面上分開顯示。
+//   畫面上的標題用 label：表格前面寫的「第1彈」，或那個轉蛋段落自己的名稱 (「怪物彈珠聖誕節 × Re:從零開始的異世界生活」)
 function planCollab(poolsData, item) {
     const { event, data } = item;
     const flags = [];
@@ -368,7 +445,11 @@ function planCollab(poolsData, item) {
 
     const star6 = (rows) => rows.filter((r) => isStar6Base(r.rarity)).map((r) => r.name);
     const all = data.collab
-        .map((s) => ({ ...s, lists: (s.tables || [s.rows]).map(star6).filter((l) => l.length > 0) }))
+        .map((s) => {
+            const kept = (s.tables || [s.rows]).map((t, i) => ({ names: star6(t), label: (s.labels && s.labels[i]) || '' }))
+                .filter((l) => l.names.length > 0);
+            return { ...s, lists: kept.map((l) => l.names), listLabels: kept.map((l) => l.label) };
+        })
         .filter((s) => s.lists.length > 0)
         .map((s) => ({ ...s, star6: s.lists.flat() }));
     if (all.length === 0) {
@@ -394,9 +475,14 @@ function planCollab(poolsData, item) {
     const poolName = existing.length === 1 ? existing[0].pool
         : (sections.map((s) => s.gachaName).find(Boolean) || event.event.replace(/^\d{4}-\d{2}月\s*/, ''));
     const mainRaw = sections.flatMap((s) => s.lists[0]);
-    const rerunLists = [
-        ...sections.flatMap((s) => s.lists.slice(1)),
-        ...all.filter((s) => !sections.includes(s)).flatMap((s) => s.lists)
+    const mainGacha = sections.map((s) => s.gachaName).find(Boolean) || '';
+    const reruns = [
+        ...sections.flatMap((s) => s.lists.slice(1).map((names, i) => ({ names, label: s.listLabels[i + 1] }))),
+        // 其他轉蛋段落：表格寫了第幾彈就用它；沒寫時用段落自己的轉蛋名稱 (和這期的不同才用)
+        ...all.filter((s) => !sections.includes(s)).flatMap((s) => s.lists.map((names, i) => ({
+            names,
+            label: s.listLabels[i] || (s.gachaName && matchKey(s.gachaName) !== matchKey(mainGacha) ? s.gachaName : '')
+        })))
     ];
 
     let current = poolsData;
@@ -434,23 +520,25 @@ function planCollab(poolsData, item) {
     }
 
     // 複刻的前幾彈：每張表一個卡池，接在主卡池後面
-    rerunLists.forEach((list, i) => {
+    reruns.forEach(({ names: list, label }, i) => {
         const name = `${poolName}・複刻 ${i + 1}`;
         const r = clean(list);
         const index = current.pools.findIndex((p) => p.pool === name && p.kind === 'collab');
         if (index !== -1) {
-            if (sameSet(r.names, current.pools[index].chars)) return;
-            const before = current.pools[index].chars;
-            apply({ ...current, pools: current.pools.map((p, j) => (j === index ? { ...p, chars: r.names } : p)) },
-                { type: 'update-rerun', pool: name, event: event.event, source: event.source, chars: r.names, ...diffNames(r.names, before) }, r.notes);
+            const old = current.pools[index];
+            if (sameSet(r.names, old.chars) && (old.label || '') === (label || '')) return;
+            const before = old.chars;
+            const relabel = ({ label: unused, chars, ...rest }) => ({ ...rest, ...(label ? { label } : {}), chars: r.names });
+            apply({ ...current, pools: current.pools.map((p, j) => (j === index ? relabel(p) : p)) },
+                { type: 'update-rerun', pool: name, label, event: event.event, source: event.source, chars: r.names, ...diffNames(r.names, before) }, r.notes);
             return;
         }
-        const entry = { pool: name, kind: 'collab', ...(matchKeys ? { match: matchKeys } : {}), rerun: true, source: event.source, chars: r.names };
+        const entry = { pool: name, kind: 'collab', ...(matchKeys ? { match: matchKeys } : {}), rerun: true, ...(label ? { label } : {}), source: event.source, chars: r.names };
         const pools = [...current.pools];
         const anchor = pools.reduce((idx, p, j) => (p.kind === 'collab' && (p.pool === poolName || p.pool.startsWith(`${poolName}・複刻 `)) ? j : idx), -1);
         pools.splice(anchor + 1, 0, entry);
         apply({ ...current, pools },
-            { type: 'new-rerun', pool: name, event: event.event, source: event.source, chars: r.names, added: r.names, removed: [] }, r.notes);
+            { type: 'new-rerun', pool: name, label, event: event.event, source: event.source, chars: r.names, added: r.names, removed: [] }, r.notes);
     });
     return { data: current, changes, flags };
 }
@@ -464,7 +552,7 @@ function planLimitedList(poolsData, event, pool, rawNames, exact) {
         const list = Array.isArray(match) && match.length ? match : [fallback];
         return exactKey && !list.includes(exactKey) ? [...list, exactKey] : list;
     };
-    const linkExact = (data2, index) => ({ ...data2, pools: data2.pools.map((p, i) => (i === index ? { ...p, match: withExact(p.match, p.pool) } : p)) });
+    const linkExact = (data2, index) => (!exactKey ? data2 : { ...data2, pools: data2.pools.map((p, i) => (i === index ? { ...p, match: withExact(p.match, p.pool) } : p)) });
     const needsExact = (p) => exactKey && !(Array.isArray(p.match) && p.match.includes(exactKey));
     const flags = [];
     const flag = (message) => flags.push({ event: event.event, source: event.source, message });
@@ -506,7 +594,7 @@ function planLimitedList(poolsData, event, pool, rawNames, exact) {
         }
         // 同一個月有另一個名單不同的同名轉蛋：這期另外一個版本，只用在名稱含有 variant 的活動
         const template = raw.find((p) => p.pool === pool && p.kind === 'limited' && Array.isArray(p.match));
-        const entry = { pool, kind: 'limited', ...(template ? { match: template.match } : {}), months: [month], variant, source: event.source, chars: names };
+        const entry = { pool, kind: 'limited', ...(template ? { match: template.match.filter((m) => !String(m).startsWith('=')) } : {}), months: [month], variant, source: event.source, chars: names };
         flag(`「${pool}」${month} 有兩個名單不同的轉蛋，這期的名單另外存成一個版本，只用在名稱含有「${variant}」的活動（活動改名時要一起改 pools.json 的 variant）`);
         return done({ ...poolsData, pools: insertEntry(raw, entry) },
             { type: 'add-version', pool, month, event: event.event, source: event.source, chars: names, ...d, previous: `同月的另一期` });
@@ -586,15 +674,25 @@ function planComboLimited(poolsData, item) {
 }
 
 // 本家 (祭典等)：限定角色表 → 活動名稱對到的限定卡池
-function planHonke(poolsData, item) {
+function planHonke(poolsData, item, earlierFlags) {
     const { event, data } = item;
-    const flags = [];
+    const flags = earlierFlags || [];
     const flag = (message) => flags.push({ event: event.event, source: event.source, message });
     if (data.limited.length === 0) return result(poolsData, null, flags);
     if (!eventMonth(event.event)) {
         flag('活動名稱沒有年月，無法決定卡池版本，需要手動處理');
         return result(poolsData, null, flags);
     }
+    // 一篇公告有好幾個各自獨立的轉蛋 (小標題的名單：聖誕節 2021、2020、2019 的復刻)、
+    // 活動名稱點名其中的 (「復刻！怪物彈珠聖誕節 2021」)：只用點名的那幾個
+    const eventKey = poolKey(event.event);
+    const named = data.limited.filter((l) => l.fromHeadings && l.poolName && eventKey.includes(poolKey(l.poolName)));
+    const distinct = new Set(data.limited.map((l) => poolKey(l.poolName)).filter(Boolean));
+    if (named.length > 0 && distinct.size > new Set(named.map((l) => poolKey(l.poolName))).size) {
+        return planHonke(poolsData, { event, data: { ...data, limited: named } }, flags);
+    }
+    // 小標題的名單：內文沒有引用到的名稱是推測的，標出來
+    data.limited.forEach((l) => (l.guessed || []).forEach((n) => flag(`「${n}」是從小標題「${l.header}」下面的獸神化後名稱推測的獸神化前名稱（公告內文沒有寫），請確認`)));
     // 一篇公告同時開好幾個卡池 (「怪物彈珠世代」：2019、2018… 各有一張「「X」限定角色」表)：
     // 每個卡池各自一個版本，畫面上分開顯示。沒寫卡池名稱的表 (轉出對象期間限定角色) 歸到第一個卡池
     const groups = [];
@@ -633,8 +731,13 @@ function planHonke(poolsData, item) {
             return result(poolsData, null, flags);
         }
     }
-    if (poolNames.length === 0) poolNames = [byHeader ? byHeader.pool : (header || event.event.replace(/^\d{4}-\d{2}月\s*/, ''))];
-    return planLimitedList(poolsData, event, poolNames[0], data.limited.flatMap((l) => l.names));
+    // 活動名稱對不到表頭寫的卡池 (「世足激獸神」的公告是「激獸神祭」限定角色)：這期的版本加上 "=活動名稱"，讓這場活動列出這個卡池
+    let exact = '';
+    if (poolNames.length === 0) {
+        poolNames = [byHeader ? byHeader.pool : (header || event.event.replace(/^\d{4}-\d{2}月\s*/, ''))];
+        if (byHeader && !event.unlogged) exact = event.event.replace(/^\d{4}-\d{1,2}月\s*/, '').trim();
+    }
+    return planLimitedList(poolsData, event, poolNames[0], data.limited.flatMap((l) => l.names), exact);
 }
 
 // 一期活動 → 卡池的變動 { data, changes, flags }
@@ -703,6 +806,9 @@ function mergeElements(elements, items, poolsData, nameOverrides) {
     byDate.forEach((item) => {
         Object.entries((item.data && item.data.elementOf) || {}).forEach(([name, element]) => put(all[name] || name, element, item));
     });
+    // 五個屬性祭典每一期的名單 (公告的名單沒有用顏色標屬性，例如新角色「CALEzMA」)：還沒有屬性的才補
+    readPools(poolsData).filter((p) => p.kind === 'limited' && p.months.length > 0 && ELEMENT_OF_POOL[p.pool])
+        .forEach((p) => p.chars.forEach((c) => put(c, ELEMENT_OF_POOL[p.pool])));
     // ★4 等舊版本的屬性：只補還沒有的名稱，不一致時不用標出來
     byDate.forEach((item) => {
         Object.entries((item.data && item.data.elementOfLow) || {}).forEach(([name, element]) => put(all[name] || name, element, null));
@@ -736,7 +842,7 @@ function describePoolChanges({ changes, flags }) {
         const since = c.type === 'inherit' ? `（${c.month}，公告沒列出本家限定角色，沿用 ${c.previous} 的名單）`
             : c.type === 'add-month' ? `（${c.month}，名單和 ${c.previous} 相同）`
             : c.month ? `（${c.month}${c.previous ? `，和前一期（${c.previous}）比較` : ''}）` : '';
-        lines.push(`- **${TYPE_LABELS[c.type]}「${c.pool}」**${since} ← ${c.event} [公告](${c.source})`);
+        lines.push(`- **${TYPE_LABELS[c.type]}「${c.pool}」**${c.label ? `（${c.label}）` : ''}${since} ← ${c.event} [公告](${c.source})`);
         if (c.added.length) lines.push(`  - 多了：${c.added.join('、')}`);
         if (c.removed.length) lines.push(`  - 少了：${c.removed.join('、')}`);
         lines.push(`  - 名單：${c.chars.join('、')}`);
@@ -762,7 +868,7 @@ function describePoolChanges({ changes, flags }) {
 }
 
 module.exports = {
-    splitNameCell, parseLimitedLists, parseLimitedTables, pickSections, parseCollabSections, isStar6Base, extractPoolData,
+    splitNameCell, parseLimitedLists, parseLimitedTables, parseHeadingLists, pickSections, parseCollabSections, isStar6Base, extractPoolData,
     colorElement, cellElements, mergeElements,
     splitGlued, knownNames, cleanNames, planPoolChanges, formatPoolsJson, describePoolChanges
 };
