@@ -796,10 +796,28 @@ function planOne(poolsData, item) {
     return { data: limited.data, changes: [...collab.changes, ...limited.changes], flags: [...collab.flags, ...limited.flags] };
 }
 
+// 管理員補的角色 (scraper/name-overrides.json 的 extras)：公告只寫了說明、沒寫名稱的特別造型
+//   (「新年造型 潘朵拉」→「新年祈願的希望少女 潘朵拉」)。{ 公告網址: { 表頭寫的卡池名稱: [名稱...] } }
+//   加在那篇公告、那個卡池的名單最後，當成特別造型 (不套用屬性祭典的屬性)
+function withExtras(item, extras) {
+    const own = extras && item.event && extras[item.event.source];
+    if (!own || !item.data || !Array.isArray(item.data.limited)) return item;
+    const used = new Set();
+    const limited = item.data.limited.map((l) => {
+        const key = Object.keys(own).find((k) => !used.has(k) && poolKey(k) === poolKey(l.poolName));
+        if (!key) return l;
+        used.add(key);
+        const add = own[key].filter((n) => !l.names.some((x) => poolKey(x) === poolKey(n)));
+        return { ...l, names: [...l.names, ...add], specials: [...(l.specials || []), ...add] };
+    });
+    return { ...item, data: { ...item.data, limited } };
+}
+
 // 好幾期活動依開始日由舊到新套用 (後面的期數會和前面剛加的版本比較)
 //   nameOverrides：scraper/name-overrides.json 的內容 (選填)
 function planPoolChanges(poolsData, items, nameOverrides) {
     overrides = { global: {}, pools: {}, ...(nameOverrides || {}) };
+    items = items.map((item) => withExtras(item, overrides.extras));
     let data = poolsData;
     const changes = [];
     const flags = [];
@@ -843,7 +861,8 @@ function mergeElements(elements, items, poolsData, nameOverrides) {
     });
     // 五個屬性祭典每一期的名單 (公告的名單沒有用顏色標屬性，例如新角色「CALEzMA」)：還沒有屬性的才補。
     // 機率特別UP 的特別造型不算 (「水祭 Zero Gravity LIVE!!」的特別造型是別的屬性)
-    const specialKeys = new Set(items.flatMap((item) => ((item.data && item.data.limited) || []).flatMap((l) => l.specials || [])).map(poolKey));
+    const extraNames = Object.values((nameOverrides && nameOverrides.extras) || {}).flatMap((byPool) => Object.values(byPool).flat());
+    const specialKeys = new Set([...items.flatMap((item) => ((item.data && item.data.limited) || []).flatMap((l) => l.specials || [])), ...extraNames].map(poolKey));
     readPools(poolsData).filter((p) => p.kind === 'limited' && p.months.length > 0 && ELEMENT_OF_POOL[p.pool])
         .forEach((p) => p.chars.filter((c) => !specialKeys.has(poolKey(c))).forEach((c) => put(c, ELEMENT_OF_POOL[p.pool])));
     // ★4 等舊版本的屬性：只補還沒有的名稱，不一致時不用標出來

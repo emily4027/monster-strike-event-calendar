@@ -464,3 +464,19 @@ test('限定角色表前面「機率特別UP角色」裡註明轉出形態的特
         + table + '<table><tbody><tr><th>轉出對象期間限定角色</th></tr><tr><td>開啟天國者 烏列爾 MV　另一隻</td></tr></tbody></table>';
     assert.deepEqual(X.parseLimitedLists(skip).map((l) => l.names), [['瑪娜', '摩西'], ['開啟天國者 烏列爾 MV', '另一隻']]);
 });
+
+test('管理員補的角色 (extras)：加在那篇公告、那個卡池的名單最後', () => {
+    const html = '<table><tbody><tr><th>「世代 2019」限定角色</th></tr><tr><td>所羅門　亞伯</td></tr></tbody></table>'
+        + '<table><tbody><tr><th>「世代 2018」限定角色</th></tr><tr><td>瑪娜　摩西</td></tr></tbody></table>';
+    const pools = { pools: [
+        { pool: '世代 2019', kind: 'limited', match: ['世代+2019'], chars: ['所羅門'] },
+        { pool: '世代 2018', kind: 'limited', match: ['世代+2018'], chars: ['瑪娜'] }
+    ] };
+    const it = item('2026-11月 怪物彈珠世代', '2026-11-10', 'honke', html);
+    const extras = { [it.event.source]: { '世代 2018': ['聖誕造型的瑪娜', '摩西'] }, 'https://example.com/other.html': { '世代 2019': ['不相干'] } };
+    const r = X.planPoolChanges(pools, [it], { extras });
+    assert.deepEqual(r.changes.map((c) => [c.pool, c.chars]), [
+        ['世代 2019', ['所羅門', '亞伯']],
+        ['世代 2018', ['瑪娜', '摩西', '聖誕造型的瑪娜']]
+    ]);
+});
