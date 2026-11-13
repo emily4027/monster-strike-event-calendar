@@ -149,3 +149,25 @@ test('管理員編輯活動：不合理的修改會被擋下', () => {
     assert.throws(edit({ source: 'https://example.com/a' }), /官網/);
     assert.throws(edit({ event: 'B' }), /已經有另一場活動/);
 });
+
+test('有參與的活動：免費都算，其他要有抽數；進行中和未來的活動一律算', () => {
+    const events = C.normalizeEvents([
+        { event: '免費', date: '2026-01-01', endDate: '2026-01-05', tag: 'free' },
+        { event: '本家有抽', date: '2026-01-01', endDate: '2026-01-05', tag: 'honke' },
+        { event: '本家沒抽', date: '2026-01-01', endDate: '2026-01-05', tag: 'honke' },
+        { event: '合作零抽', date: '2026-01-01', endDate: '2026-01-05', tag: 'collab' },
+        { event: '寶珠沒抽', date: '2026-01-01', tag: 'orb' },
+        { event: '沒標籤沒抽', date: '2026-01-01' },
+        { event: '進行中', date: '2026-02-01', endDate: '2026-02-10', tag: 'honke' },
+        { event: '今天開始', date: '2026-02-05', tag: 'collab' },
+        { event: '未來', date: '2026-03-01', tag: 'collab' }
+    ]);
+    const records = [
+        { event: '本家有抽', account: '羽入', pulls: 30 },
+        { event: '合作零抽', account: '羽入', pulls: 0 },
+        { event: '本家沒抽', account: '梨花', pulls: 10 }
+    ];
+    const names = (account) => C.joinedEvents(events, C.summarizePulls(records, events, account), '2026-02-05').map((e) => e.event).sort();
+    assert.deepEqual(names('羽入'), ['今天開始', '免費', '本家有抽', '未來', '進行中'].sort());
+    assert.deepEqual(names('all'), ['今天開始', '免費', '本家有抽', '本家沒抽', '未來', '進行中'].sort());
+});

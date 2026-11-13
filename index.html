@@ -59,6 +59,10 @@
                     <select id="account-filter" class="form-select form-select-sm" disabled>
                         <option value="all">全部帳號</option>
                     </select>
+                    <div class="form-check show-all-check">
+                        <input class="form-check-input" type="checkbox" id="show-all-events" checked disabled>
+                        <label class="form-check-label" for="show-all-events">顯示全部活動</label>
+                    </div>
                 </div>
             </div>
 
@@ -67,6 +71,7 @@
                 <span class="legend-item"><span class="legend-dot tag-collab"></span>合作</span>
                 <span class="legend-item"><span class="legend-dot tag-free"></span>免費</span>
                 <span class="legend-item"><span class="legend-dot tag-orb"></span>寶珠</span>
+                <span id="show-all-hint" class="show-all-hint">有抽卡紀錄後，可以只看參與過的活動</span>
                 <span id="records-source" class="records-source"></span>
             </div>
 

@@ -220,7 +220,12 @@ body {
 }
 .month-picker-month.selected.has-events::after { background: #fff; }
 .month-picker-foot { text-align: right; margin-top: 6px; }
-.toolbar-filters { min-width: 140px; }
+.toolbar-filters { min-width: 140px; display: flex; align-items: center; gap: 12px; flex-wrap: wrap; }
+.toolbar-filters .form-select { width: auto; min-width: 140px; }
+.show-all-check { margin: 0; font-size: 0.9rem; white-space: nowrap; }
+.show-all-hint { margin-left: auto; color: #888; }
+.show-all-hint + .records-source { margin-left: 0; }
+.show-all-hint[hidden] + .records-source { margin-left: auto; }
 
 .tag-legend {
     display: flex;
@@ -368,7 +373,9 @@ body {
     .calendar-toolbar { justify-content: center; }
     .month-title { min-width: 0; font-size: 1.2rem; }
     .toolbar-filters { width: 100%; }
-    .records-source { margin-left: 0; width: 100%; }
+    .records-source, .show-all-hint { margin-left: 0; width: 100%; }
+    .show-all-hint[hidden] + .records-source { margin-left: 0; }
+    .toolbar-filters .form-select { flex: 1; }
 }
 
 /* --- 活動詳細 --- */

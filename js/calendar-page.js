@@ -22,6 +22,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // 1. 設定與狀態
     // =====================================================
     const ACCOUNT_FILTER_KEY = 'calendar_account_filter_v1';
+    const SHOW_ALL_KEY = 'calendar_show_all_events_v1';
     const TOAST_DURATION_MS = 3000;
     const TOAST_COLORS = { error: '#dc3545', info: '#0d6efd', success: '#28a745' };
     const EVENTS_SOURCE_LABELS = { cloud: '雲端活動清單', fallback: '備援活動清單 (events.json)' };
@@ -31,6 +32,8 @@ document.addEventListener('DOMContentLoaded', () => {
     const weeksContainer = $('calendar-weeks');
     const monthList = $('month-list');
     const accountFilter = $('account-filter');
+    const showAllToggle = $('show-all-events');
+    const showAllHint = $('show-all-hint');
     const recordsSourceLabel = $('records-source');
     const toast = $('toast-message');
     const modalTitle = $('event-modal-title');
@@ -40,6 +43,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const monthOf = (date) => ({ year: Number(date.slice(0, 4)), month: Number(date.slice(5, 7)) });
     let current = monthOf(today);
     let events = [];
+    let shown = [];             // 畫面上顯示的活動 (沒勾「顯示全部活動」時只有參與過的)
     let rawEvents = [];         // 雲端的原始清單 (管理員編輯時先在本機檢查用)
     let eventsSource = '';
     let records = [];
@@ -117,6 +121,12 @@ document.addEventListener('DOMContentLoaded', () => {
         if (recordsSource === 'cloud') recordsSourceLabel.textContent = `抽數：雲端紀錄（${accountText}）`;
         else if (recordsSource === 'local') recordsSourceLabel.textContent = `抽數：這台電腦上的紀錄（${accountText}）`;
         else recordsSourceLabel.textContent = '';
+        // 沒有抽卡紀錄時分不出有沒有參與，一律顯示全部
+        const canFilter = hasRecords();
+        showAllToggle.disabled = !canFilter;
+        showAllToggle.checked = !canFilter || S.storage.get(SHOW_ALL_KEY) === '1';
+        showAllHint.hidden = canFilter;
+        shown = showAllToggle.checked ? events : C.joinedEvents(events, summary, today);
     }
 
     function barLabel(e) {
@@ -128,7 +138,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const weeks = C.monthWeeks(current);
         const fragment = document.createDocumentFragment();
         weeks.forEach((days) => {
-            const bars = C.layoutWeek(events, days[0].date);
+            const bars = C.layoutWeek(shown, days[0].date);
             const lanes = bars.reduce((max, b) => Math.max(max, b.lane + 1), 0);
             const week = el('div', 'calendar-week');
             week.style.gridTemplateRows = `auto repeat(${lanes}, var(--bar-height)) 1fr`;
@@ -167,9 +177,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const weeks = C.monthWeeks(current);
         const first = `${C.monthKey(current)}-01`;
         const last = weeks[weeks.length - 1].filter((d) => d.inMonth).pop().date;
-        const list = C.eventsInRange(events, first, last);
+        const list = C.eventsInRange(shown, first, last);
         if (list.length === 0) {
-            monthList.replaceChildren(el('li', 'month-list-empty', eventsSource ? '這個月沒有活動' : '讀不到活動清單'));
+            const hidden = C.eventsInRange(events, first, last).length;
+            const text = !eventsSource ? '讀不到活動清單'
+                : hidden ? `這個月沒有參與過的活動（勾選「顯示全部活動」可以看到 ${hidden} 場）` : '這個月沒有活動';
+            monthList.replaceChildren(el('li', 'month-list-empty', text));
             return;
         }
         const items = list.map((e) => {
@@ -225,7 +238,7 @@ document.addEventListener('DOMContentLoaded', () => {
             b.type = 'button';
             if (pickerYear === current.year && m === current.month) b.classList.add('selected');
             if (pickerYear === thisMonth.year && m === thisMonth.month) b.classList.add('this-month');
-            if (events.some((e) => e.date.slice(0, 7) <= key && (e.endDate || e.date).slice(0, 7) >= key)) b.classList.add('has-events');
+            if (shown.some((e) => e.date.slice(0, 7) <= key && (e.endDate || e.date).slice(0, 7) >= key)) b.classList.add('has-events');
             b.addEventListener('click', () => {
                 closeMonthPicker();
                 goToMonth({ year: pickerYear, month: m });
@@ -504,10 +517,16 @@ document.addEventListener('DOMContentLoaded', () => {
             S.storage.set(ACCOUNT_FILTER_KEY, accountFilter.value);
             render();
         });
+        showAllToggle.addEventListener('change', () => {
+            S.storage.set(SHOW_ALL_KEY, showAllToggle.checked ? '1' : '0');
+            render();
+        });
         // 左右方向鍵切換月份 (詳細視窗開著時不切換)
         document.addEventListener('keydown', (event) => {
             if (document.querySelector('.modal.show')) return;
-            if (['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName)) return;
+            // 勾選框不用方向鍵，剛勾完「顯示全部活動」也要能切換月份
+            const active = document.activeElement;
+            if (['INPUT', 'SELECT', 'TEXTAREA'].includes(active.tagName) && active.type !== 'checkbox') return;
             if (event.key === 'ArrowLeft') goToMonth(C.addMonths(current, -1));
             if (event.key === 'ArrowRight') goToMonth(C.addMonths(current, 1));
         });

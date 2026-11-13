@@ -236,6 +236,14 @@
         return order.map((name) => rows.find((r) => r.account === name));
     }
 
+    // 有參與的活動：免費活動都算；其他 (本家、合作、寶珠、沒有標籤) 要有抽數才算。
+    // 進行中和還沒開始的活動還沒機會抽，一律算 (不然看不到現在有什麼轉蛋)。
+    // summary 是 summarizePulls 的結果 (已經依帳號篩選過)
+    function joinedEvents(events, summary, today) {
+        return events.filter((e) => e.tag === 'free' || endOf(e) >= today
+            || ((summary.get(e.event) || { total: 0 }).total > 0));
+    }
+
     function accountNames(records) {
         return sortAccountNames([...new Set(cleanRecords(records).map((r) => r.account.trim()))]);
     }
@@ -244,7 +252,7 @@
         TAGS, TAG_LABELS,
         isValidDate, addDays, daysBetween, addMonths, monthKey, todayString, monthWeeks,
         normalizeEvents, applyEventEdit, compareEvents, eventsInRange, displayName, layoutWeek, formatPeriod,
-        buildAliasMap, summarizePulls, accountNames
+        buildAliasMap, summarizePulls, joinedEvents, accountNames
     };
     if (typeof module !== 'undefined' && module.exports) module.exports = api;
     else root.CalendarCore = api;
