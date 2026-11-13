@@ -830,7 +830,7 @@ function planPoolChanges(poolsData, items, nameOverrides) {
     return { data, changes, flags };
 }
 
-// 屬性表 (elements.json 的 elements：{ 名稱: 屬性 }) 加上公告讀到的屬性。
+// 屬性表 ({ 名稱: 屬性 }，取自角色名冊) 加上公告讀到的屬性。
 //   名稱用卡池裡的寫法 (套用名稱對應)；已經有的不覆蓋，和既有的屬性不一致時標出來。
 //   五個屬性祭典 (綠色幻想 = 木…) 預設名單裡的角色也補上
 function mergeElements(elements, items, poolsData, nameOverrides) {
@@ -873,12 +873,13 @@ function mergeElements(elements, items, poolsData, nameOverrides) {
     return { elements: sorted, added, flags };
 }
 
-// pools.json 的寫法：一個卡池一行，欄位順序照原本
+// pools.json 的寫法：一個卡池一行，欄位順序照原本；names (編號 → 名稱) 放最後，一個編號一行
 function formatPoolsJson(data) {
     const value = (v) => (Array.isArray(v) ? `[${v.map((x) => JSON.stringify(x)).join(', ')}]` : JSON.stringify(v));
     const line = (p) => `{${Object.entries(p).map(([k, v]) => `${JSON.stringify(k)}: ${value(v)}`).join(', ')}}`;
-    const head = Object.entries(data).filter(([k]) => k !== 'pools').map(([k, v]) => `  ${JSON.stringify(k)}: ${JSON.stringify(v)},`);
-    return ['{', ...head, '  "pools": [', (data.pools || []).map((p) => `    ${line(p)}`).join(',\n'), '  ]', '}', ''].join('\n');
+    const head = Object.entries(data).filter(([k]) => k !== 'pools' && k !== 'names').map(([k, v]) => `  ${JSON.stringify(k)}: ${JSON.stringify(v)},`);
+    const names = data.names ? ['  "names": {', Object.entries(data.names).map(([k, v]) => `    ${JSON.stringify(k)}: ${JSON.stringify(v)}`).join(',\n'), '  }'] : [];
+    return ['{', ...head, '  "pools": [', (data.pools || []).map((p) => `    ${line(p)}`).join(',\n'), names.length ? '  ],' : '  ]', ...names, '}', ''].join('\n');
 }
 
 // PR 說明 / 紀錄用的 Markdown

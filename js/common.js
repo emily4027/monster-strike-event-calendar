@@ -17,7 +17,7 @@
     const ADMINS_COLLECTION = 'admins';                     // admins/{uid} 存在即為管理員 (和抽卡統計共用)
     const GACHA_LOCAL_KEY = 'gachaRecords';                 // 抽卡統計的本機紀錄 (同網域共用)
     const POOLS_URL = 'pools.json';
-    const ELEMENTS_URL = 'elements.json';                   // 角色名稱 → 屬性 (名稱上色用)
+    const ROSTER_URL = 'characters.json';                   // 角色名冊 (名稱、別名、各形態 → 屬性，名稱上色用)
     const ELEMENT_CLASS = { '火': 'el-fire', '水': 'el-water', '木': 'el-wood', '光': 'el-light', '闇': 'el-dark' };
 
     const TOOLBOX_TOOLS_URL = 'https://emily4027.github.io/monster-strike-toolbox/tools.js';
@@ -118,11 +118,17 @@
     async function loadElementClasses() {
         const { poolKey } = root.CharacterPools;
         try {
-            const data = await fetchJson(ELEMENTS_URL);
-            const map = new Map(Object.entries((data && data.elements) || {}).map(([name, e]) => [poolKey(name), ELEMENT_CLASS[e] || '']));
+            const data = await fetchJson(ROSTER_URL);
+            const map = new Map();
+            ((data && data.characters) || []).forEach((c) => {
+                const cls = ELEMENT_CLASS[c && c.element];
+                if (!cls) return;
+                [c.name, ...(c.aliases || []), ...(c.forms || []).map((f) => f && f.name)]
+                    .forEach((name) => { if (poolKey(name)) map.set(poolKey(name), cls); });
+            });
             return (name) => map.get(poolKey(name)) || '';
         } catch (e) {
-            console.warn('[DATA] 讀不到 elements.json，角色名稱不上色', e);
+            console.warn('[DATA] 讀不到 characters.json，角色名稱不上色', e);
             return () => '';
         }
     }

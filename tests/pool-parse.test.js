@@ -237,10 +237,9 @@ test('名稱對應 (name-overrides.json)：全部卡池或只在某個卡池把�
     const overrides = { global: { '角色 二': '角色二（正式）' }, pools: { '作品A': { '角色三': '角色三α' }, '別的卡池': { '角色一': 'X' } } };
     const r = X.planPoolChanges(POOLS(), [item('2026-05月 作品A', '2026-05-10', 'collab', COLLAB)], overrides);
     assert.deepEqual(r.data.pools[0].chars, ['角色二（正式）', '角色三α']);
-    // 規則檔本身的格式
+    // 名稱對應已經搬到角色名冊的別名 (tests/roster.test.js)；規則檔只剩管理員補的角色
     const file = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'scraper', 'name-overrides.json'), 'utf8'));
-    assert.equal(typeof file.global, 'object');
-    assert.equal(typeof file.pools, 'object');
+    assert.equal(typeof file.extras, 'object');
 });
 
 test('限定角色表的表頭：「轉出對象的激獸神祭限定角色：」「轉出對象的期間限定角色」也認得', () => {
