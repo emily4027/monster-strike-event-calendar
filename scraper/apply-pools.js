@@ -12,7 +12,7 @@
 const fs = require('fs');
 const path = require('path');
 const { planPoolChanges, formatPoolsJson, describePoolChanges, mergeElements } = require('./pool-parse.js');
-const R = require('./roster.js');
+const R = require('../roster.js');
 
 const POOLS_FILE = path.join(__dirname, '..', 'pools.json');
 const ROSTER_FILE = path.join(__dirname, '..', 'characters.json');

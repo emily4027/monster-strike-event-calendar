@@ -210,14 +210,21 @@
     //   { kind: 'limited', pools: ['激獸神祭'] }：官網名單上的限定角色
     //   { kind: 'collab', pools: [活動名稱...] }：在合作活動抽到的角色 (活動名稱來自抽卡紀錄)
     //   null：常駐角色，不標
-    function poolOf(entry, limitedOf) {
+    //   options.isPeriodPool(卡池名稱)：是不是期間限定的卡池 → 加上 period: true (期間限定也是限定)
+    //   options.kindOf(角色名稱)：名冊裡管理員指定的類別，只在沒有卡池資料時才用：
+    //     limited / period → { kind: 'limited', pools: [], period }（卡池未知）；collab → { kind: 'collab', pools: [] }
+    function poolOf(entry, limitedOf, options = {}) {
         const limited = limitedOf ? limitedOf(entry.name) : '';
-        if (limited) return { kind: 'limited', pools: [limited] };
+        if (limited) return { kind: 'limited', pools: [limited], ...(options.isPeriodPool && options.isPeriodPool(limited) ? { period: true } : {}) };
         const events = [];
         (entry.accounts || []).forEach((a) => a.entries.forEach((e) => {
             if (e.tag === 'collab' && e.event && !events.includes(e.event)) events.push(e.event);
         }));
-        return events.length > 0 ? { kind: 'collab', pools: events } : null;
+        if (events.length > 0) return { kind: 'collab', pools: events };
+        const kind = options.kindOf ? options.kindOf(entry.name) : '';
+        if (kind === 'limited' || kind === 'period') return { kind: 'limited', pools: [], ...(kind === 'period' ? { period: true } : {}) };
+        if (kind === 'collab') return { kind: 'collab', pools: [] };
+        return null;
     }
 
     // 好幾筆紀錄的「獲得角色」→ 角色名稱 → 數量 (拿掉註記與同名編號、套用名稱修正)

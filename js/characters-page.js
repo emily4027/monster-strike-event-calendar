@@ -11,7 +11,7 @@ document.addEventListener('DOMContentLoaded', () => {
     //   6. 啟動 (含從行事曆跳過來的 ?q=角色名稱)
     //
     // 這個頁面絕對不寫入抽卡紀錄或果實分配的資料。
-    // 唯一會寫入的是管理員的名稱修正 (Firestore shared/characters)。抽卡紀錄本身由抽卡統計
+    // 會寫入的只有管理員的名稱修正 (Firestore shared/characters) 和編輯模式對角色名冊的修改 (shared/roster)。抽卡紀錄本身由抽卡統計
     // 在各使用者打開時套用修正 (notes.js 的 renameCharacters)，果實分配同步改匯入對應。
     // 共用的讀取、登入、工具箱在 common.js
     // =====================================================
@@ -20,7 +20,8 @@ document.addEventListener('DOMContentLoaded', () => {
         buildAliasMap, buildCatalog, listAccounts, sortCatalog, filterByQuery, findSimilarNames,
         poolOf
     } = window.Catalog;
-    const { buildLimitedLookup, readNameFixes, resolveName, isDistinct } = window.CharacterPools;
+    const { buildLimitedLookup, readNameFixes, resolveName, isDistinct, isPeriodPool, poolKey } = window.CharacterPools;
+    const Roster = window.Roster;
     const S = window.Shared;
     const { el } = S;
 
@@ -52,7 +53,10 @@ document.addEventListener('DOMContentLoaded', () => {
         summary: $('summary'),
         list: $('catalog-list'),
         empty: $('empty-message'),
-        adminBadge: $('admin-badge')
+        adminBadge: $('admin-badge'),
+        editBtn: $('edit-mode-btn'),
+        issueFilter: $('issue-filter'),
+        rosterNames: $('roster-names')
     };
 
     let records = [];
@@ -63,6 +67,9 @@ document.addEventListener('DOMContentLoaded', () => {
     let nameFixes = readNameFixes(null);
     let elementClass = () => '';   // 角色名稱 → 屬性的 CSS class
     let isAdmin = false;
+    let roster = null;        // 角色名冊 (characters.json 套上管理員的修改)：{ base, edits, data, names }
+    let editMode = false;     // 管理員的編輯模式：清單換成整份名冊
+    let rosterSimilar = null; // 名冊裡只差一個字的名稱 (名冊變動時重算)
     let openName = '';        // 存檔後重新渲染時，維持展開這個角色
     let source = 'pending';   // pending (確認登入中) | local | cloud | cloud-error
     let loadToken = 0;        // 登入狀態改變時，丟掉舊的讀取結果
@@ -116,8 +123,12 @@ document.addEventListener('DOMContentLoaded', () => {
         const token = ++loadToken;
         S.checkAdmin(user).then((admin) => {
             if (token !== loadToken) return;
-            isAdmin = admin;
-            els.adminBadge.hidden = !admin;
+            // 本機開發：網址加 ?previewAdmin 可以預覽管理員的畫面 (只是畫面，寫入權限仍由 Firestore 規則把關)
+            const preview = location.hostname === 'localhost' && new URLSearchParams(location.search).has('previewAdmin');
+            isAdmin = admin || preview;
+            els.adminBadge.hidden = !isAdmin;
+            els.editBtn.hidden = !isAdmin;
+            if (!isAdmin && editMode) setEditMode(false);
             render();
         });
         if (!user) {
@@ -191,16 +202,23 @@ document.addEventListener('DOMContentLoaded', () => {
 
     const selectedTags = () => els.tagFilters.filter((c) => c.checked).map((c) => c.value);
 
+    const kindOf = (name) => {
+        const c = roster ? Roster.findCharacter(roster.data, name) : null;
+        return (c && c.kind) || '';
+    };
+
     function render() {
+        if (editMode) { renderRoster(); return; }
         const account = els.account.value;
         const all = buildCatalog(records, { aliasMap, account, tags: selectedTags(), rename: fixedName });
         all.forEach((e) => {
-            e.pool = poolOf(e, limitedOf);
+            e.pool = poolOf(e, limitedOf, { isPeriodPool, kindOf });
         });
         const pool = els.pool.value;
         const byPool = !pool ? all
             : pool === 'none' ? all.filter((e) => !e.pool)
             : pool === 'limited' || pool === 'collab' ? all.filter((e) => e.pool && e.pool.kind === pool)
+            : pool === 'period' ? all.filter((e) => e.pool && e.pool.period)
             : all.filter((e) => e.pool && e.pool.kind === 'limited' && e.pool.pools[0] === pool.slice('pool:'.length));
         const shown = sortCatalog(filterByQuery(byPool, els.search.value), els.sort.value);
 
@@ -229,8 +247,11 @@ document.addEventListener('DOMContentLoaded', () => {
         main.appendChild(el('span', `catalog-name ${elementClass(entry.name)}`, entry.name));
         if (entry.pool) {
             const limited = entry.pool.kind === 'limited';
-            const badge = el('span', `pool-badge pool-${entry.pool.kind}`, `${limited ? '限定' : '合作'}：${entry.pool.pools.join('、')}`);
-            badge.title = limited ? '台版官網限定角色名單上的卡池' : '抽到這隻角色的合作活動';
+            const label = limited ? (entry.pool.period ? '期間限定' : '限定') : '合作';
+            const where = entry.pool.pools.length ? `：${entry.pool.pools.join('、')}` : (limited ? '（卡池未知）' : '');
+            const badge = el('span', `pool-badge pool-${entry.pool.kind}`, label + where);
+            badge.title = !entry.pool.pools.length ? '管理員在角色名冊指定的類別，還沒有卡池資料'
+                : limited ? (entry.pool.period ? '特定活動或節日才開的限定轉蛋' : '台版官網限定角色名單上的卡池') : '抽到這隻角色的合作活動';
             main.appendChild(badge);
         }
         const similar = similarMap.get(entry.name);
@@ -387,7 +408,214 @@ document.addEventListener('DOMContentLoaded', () => {
         return wrap;
     }
 
+    // =====================================================
+    // 5-1. 編輯模式 (管理員)：整份角色名冊，有狀況的排前面
+    // =====================================================
+    function setEditMode(on) {
+        editMode = on;
+        document.body.classList.toggle('edit-mode', on);
+        els.editBtn.setAttribute('aria-pressed', String(on));
+        els.editBtn.textContent = on ? '離開編輯模式' : '編輯模式';
+        els.editBtn.classList.toggle('btn-primary', on);
+        els.editBtn.classList.toggle('btn-outline-primary', !on);
+        openName = '';
+        render();
+    }
+
+    function setRoster(next) {
+        roster = next;
+        rosterSimilar = null;
+        els.rosterNames.replaceChildren(...next.data.characters.map((c) => {
+            const o = el('option');
+            o.value = c.name;
+            return o;
+        }));
+    }
+
+    // 存一個修改；成功後卡池的名稱和屬性顏色也跟著更新
+    async function saveRosterOp(op, keepOpen, errorBox) {
+        try {
+            setRoster(await S.saveRosterOp(op));
+            openName = keepOpen || '';
+            pools = await S.loadPools();
+            limitedOf = buildLimitedLookup(pools);
+            elementClass = await S.loadElementClasses();
+            render();
+        } catch (e) {
+            console.error('[ROSTER] 名冊存檔失敗', e);
+            const denied = e && e.code === 'permission-denied';
+            const text = denied ? '沒有寫入權限（需要用管理員帳號登入）。' : `存不了：${(e && e.message) || e}`;
+            if (errorBox) errorBox.textContent = text;
+            else alert(text);
+        }
+    }
+
+    function renderRoster() {
+        if (!roster) {
+            els.summary.textContent = '';
+            els.list.replaceChildren();
+            els.empty.hidden = false;
+            els.empty.textContent = '讀不到角色名冊，請重新整理頁面再試一次。';
+            return;
+        }
+        const data = roster.data;
+        if (!rosterSimilar) rosterSimilar = findSimilarNames(data.characters.map((c) => c.name));
+        const inPoolKeys = new Set(pools.flatMap((p) => p.chars).map(poolKey));
+        const rows = Roster.rosterIssues(data, {
+            inPool: (n) => inPoolKeys.has(poolKey(n)),
+            similarOf: rosterSimilar,
+            recordNames: buildCatalog(records, { rename: fixedName }).map((e) => e.name)
+        });
+        const filter = els.issueFilter.value;
+        const isIssue = (r) => r.issues.some((i) => i.type !== 'pending');
+        const byFilter = !filter ? rows
+            : filter === 'issues' ? rows.filter(isIssue)
+            : filter === 'nodex' ? rows.filter((r) => !r.character.missing && !Roster.hasDexNumbers(r.character))
+            : rows.filter((r) => r.issues.some((i) => i.type === filter));
+        const q = poolKey(els.search.value);
+        const shown = !q ? byFilter : byFilter.filter((r) => Roster.namesOf(r.character).some((n) => poolKey(n).includes(q)));
+
+        els.summary.textContent = `名冊 ${data.characters.length} 隻角色，有狀況 ${rows.filter(isIssue).length} 隻`
+            + (shown.length !== rows.length ? `（符合條件 ${shown.length} 隻）` : '');
+        els.list.replaceChildren(...shown.map(renderRosterRow));
+        els.empty.hidden = shown.length > 0;
+        els.empty.textContent = shown.length > 0 ? '' : '沒有符合的角色。';
+    }
+
+    function renderRosterRow(row) {
+        const c = row.character;
+        const details = el('details', 'catalog-item');
+        const summary = el('summary', 'catalog-summary');
+        const main = el('div', 'catalog-main');
+        main.appendChild(el('span', `catalog-name ${elementClass(c.name)}`, c.name));
+        if (c.id) main.appendChild(el('span', 'roster-id', c.id));
+        const limited = limitedOf(c.name);
+        if (limited) main.appendChild(el('span', 'pool-badge pool-limited', `${isPeriodPool(limited) ? '期間限定' : '限定'}：${limited}`));
+        else if (c.kind) main.appendChild(el('span', `pool-badge pool-${c.kind === 'collab' ? 'collab' : 'limited'}`, Roster.KINDS[c.kind]));
+        row.issues.forEach((i) => main.appendChild(el('span', `issue-badge issue-${i.type}`, i.text)));
+        summary.appendChild(main);
+        details.appendChild(summary);
+        details.addEventListener('toggle', () => {
+            if (!details.open || details.dataset.built) return;
+            details.dataset.built = '1';
+            details.appendChild(renderRosterForm(row));
+        });
+        if (openName && c.name === openName) details.open = true;
+        return details;
+    }
+
+    function labeled(text, control, hint) {
+        const wrap = el('div');
+        const label = el('label', '', text);
+        if (hint) label.appendChild(el('span', 'hint', ` ${hint}`));
+        wrap.append(label, control);
+        return wrap;
+    }
+
+    function selectOf(options, value, className = 'form-select form-select-sm') {
+        const select = el('select', className);
+        options.forEach(([v, text]) => {
+            const o = el('option', '', text);
+            o.value = v;
+            select.appendChild(o);
+        });
+        select.value = value || '';
+        return select;
+    }
+
+    function renderRosterForm(row) {
+        const c = row.character;
+        const form = el('form', 'roster-form');
+        const error = el('div', 'roster-error');
+
+        const name = el('input', 'form-control form-control-sm');
+        name.type = 'text';
+        name.value = c.name;
+        const element = selectOf([['', '（沒有）'], ...['火', '水', '木', '光', '闇'].map((e) => [e, e])], c.element);
+        const kind = selectOf([['', '不確定'], ...Object.entries(Roster.KINDS)], c.kind);
+        const fields = el('div', 'roster-fields');
+        fields.append(labeled('名稱', name), labeled('屬性', element), labeled('類別', kind, '不屬於任何卡池時才用'));
+        form.appendChild(fields);
+
+        const aliases = el('textarea', 'form-control form-control-sm');
+        aliases.rows = Math.max(2, (c.aliases || []).length);
+        aliases.value = (c.aliases || []).join('\n');
+        form.appendChild(labeled('別名', aliases, '同一隻角色的其他寫法，一行一個'));
+
+        // 形態：名稱、形態種類、圖鑑編號
+        const formsWrap = el('div');
+        const addFormRow = (f = {}) => {
+            const r = el('div', 'roster-form-row');
+            const fname = el('input', 'form-control form-control-sm');
+            fname.type = 'text';
+            fname.placeholder = '形態的名稱';
+            fname.value = f.name || '';
+            const ftype = selectOf([['', '（形態）'], ...Roster.FORMS.map((x) => [x, x]),
+                ...(f.form && !Roster.FORMS.includes(f.form) ? [[f.form, f.form]] : [])], f.form);
+            const no = el('input', 'form-control form-control-sm');
+            no.type = 'number';
+            no.min = '1';
+            no.placeholder = '圖鑑編號';
+            no.value = f.no || '';
+            const remove = smallButton('移除', 'btn-outline-secondary', () => r.remove());
+            r.append(fname, ftype, no, remove);
+            r.read = () => ({ name: fname.value, form: ftype.value, no: no.value });
+            formsWrap.appendChild(r);
+        };
+        (c.forms || []).forEach(addFormRow);
+        const formsBox = labeled('形態', formsWrap, '進化後的名稱和遊戲裡的圖鑑編號');
+        formsBox.appendChild(smallButton('＋ 加一個形態', 'btn-outline-secondary', () => addFormRow()));
+        form.appendChild(formsBox);
+
+        const read = () => ({
+            name: name.value, element: element.value, kind: kind.value,
+            aliases: aliases.value.split('\n'),
+            poolAliases: c.poolAliases,
+            forms: [...formsWrap.children].map((r) => r.read())
+        });
+        const actions = el('div', 'roster-actions');
+        const saveText = c.missing ? '加進名冊' : row.issues.some((i) => i.type === 'new') ? '確認是新角色並儲存' : '儲存';
+        const save = el('button', 'btn btn-sm btn-accent', saveText);
+        save.type = 'submit';
+        actions.appendChild(save);
+        form.addEventListener('submit', (e) => {
+            e.preventDefault();
+            error.textContent = '';
+            const character = read();
+            const op = c.id ? { type: 'save', id: c.id, character } : { type: 'add', character, original: c.name };
+            saveRosterOp(op, character.name.trim(), error);
+        });
+        // 只差一個字：確認是不同角色
+        row.issues.filter((i) => i.type === 'similar').forEach((i) => (i.others || []).forEach((otherId) => {
+            const other = roster.data.characters.find((x) => x.id === otherId);
+            if (!other || !c.id) return;
+            actions.appendChild(smallButton(`和「${other.name}」是不同角色`, 'btn-outline-secondary',
+                () => saveRosterOp({ type: 'distinct', a: c.id, b: otherId }, c.name, error)));
+        }));
+        form.appendChild(actions);
+
+        // 這隻其實是另一隻角色：併成對方的別名或形態
+        const target = el('input', 'form-control form-control-sm');
+        target.type = 'text';
+        target.placeholder = '輸入那隻角色的名稱';
+        target.setAttribute('list', 'roster-names');
+        const as = selectOf([['alias', '是它的別名（另一種寫法）'], ['form', '是它進化後的形態']], 'alias');
+        const mergeRow = el('div', 'roster-merge');
+        mergeRow.append(target, as, smallButton('合併過去', 'btn-outline-danger', () => {
+            error.textContent = '';
+            const into = Roster.findCharacter(roster.data, target.value);
+            if (!into || !into.id) { error.textContent = '名冊裡找不到這個名稱（還沒編號的新角色不能當合併的對象）'; return; }
+            if (!confirm(`把「${c.name}」併成「${into.name}」的${as.value === 'form' ? '形態' : '別名'}？\n\n合併後「${c.name}」不再是獨立的角色，卡池裡用到它的地方都會換成「${into.name}」。合併不能直接復原。`)) return;
+            saveRosterOp({ type: 'merge', from: c.id || undefined, fromName: c.name, into: into.id, as: as.value }, into.name, error);
+        }));
+        form.appendChild(labeled('這隻其實是另一隻角色', mergeRow, '合併後不能直接復原'));
+        form.appendChild(error);
+        return form;
+    }
+
     function bindFilters() {
+        els.editBtn.addEventListener('click', () => setEditMode(!editMode));
+        els.issueFilter.addEventListener('change', render);
         let timer = null;
         els.search.addEventListener('input', () => {
             clearTimeout(timer);
@@ -430,6 +658,10 @@ document.addEventListener('DOMContentLoaded', () => {
         elementClass = fn;
         render();
     });
+    S.loadRoster().then((r) => {
+        setRoster(r);
+        render();
+    }).catch((e) => console.warn('[DATA] 讀不到角色名冊', e));
     S.loadNameFixes().then((fixes) => {
         nameFixes = fixes;
         updateSimilar();

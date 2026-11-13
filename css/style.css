@@ -429,6 +429,28 @@ body {
 }
 
 /* --- 管理員：編輯活動 --- */
+/* --- 編輯模式 (管理員) --- */
+.edit-only { display: none; }
+body.edit-mode .edit-only { display: block; }
+body.edit-mode .normal-only { display: none; }
+.edit-intro { font-size: 0.9rem; color: #666; }
+.roster-id { font-size: 0.75rem; color: #999; font-family: monospace; }
+.issue-badge { font-size: 0.75rem; padding: 2px 8px; border-radius: 10px; background: #fff3cd; color: #7a5b00; border: 1px solid #ffe08a; }
+.issue-badge.issue-new, .issue-badge.issue-missing { background: #f8d7da; color: #842029; border-color: #f1aeb5; }
+.issue-badge.issue-pending { background: #e2e3e5; color: #41464b; border-color: #c4c8cb; }
+.roster-form { display: grid; gap: 10px; padding: 12px; background: #fafafa; border: 1px solid #eee; border-radius: 8px; }
+.roster-form label { font-size: 0.85rem; font-weight: 600; color: #555; display: block; margin-bottom: 2px; }
+.roster-form .hint { font-size: 0.8rem; color: #888; font-weight: 400; }
+.roster-fields { display: grid; grid-template-columns: 2fr 1fr 1fr; gap: 10px; }
+.roster-form-row { display: grid; grid-template-columns: 2fr 1fr 110px auto; gap: 6px; margin-bottom: 6px; }
+.roster-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
+.roster-merge { display: grid; grid-template-columns: 2fr 1fr auto; gap: 6px; }
+.roster-error { color: #dc3545; font-size: 0.85rem; }
+@media (max-width: 767px) {
+    .roster-fields, .roster-merge { grid-template-columns: 1fr; }
+    .roster-form-row { grid-template-columns: 1fr 1fr; }
+}
+
 .admin-badge {
     font-size: 0.75rem;
     background: var(--accent);

@@ -130,6 +130,11 @@
         return (name) => byKey.get(poolKey(name)) || '';
     }
 
+    // 期間限定的卡池：特定活動或節日才開的轉蛋 (聖誕節、暑假、新娘、學院)，不像祭典每個月都有。
+    //   期間限定也是限定，只是畫面上標「期間限定」。其他沒有預設版本的卡池不確定，照一般的限定顯示
+    const PERIOD_POOL_RE = /聖誕|暑假|新娘|學院/;
+    const isPeriodPool = (pool) => PERIOD_POOL_RE.test(String(pool || ''));
+
     // =====================================================
     // 名稱修正 (Firestore shared/characters，管理員維護，所有人可讀)
     //   { renames: [{ from, to }], distinct: [{ a, b }] }
@@ -212,7 +217,7 @@
     }
 
     const api = {
-        poolKey, readPools, eventMonth, matchingPools, poolsForEvent, buildLimitedLookup,
+        poolKey, readPools, eventMonth, matchingPools, poolsForEvent, buildLimitedLookup, isPeriodPool,
         readNameFixes, resolveName, isDistinct, applyNameFix
     };
     if (typeof module !== 'undefined' && module.exports) module.exports = api;

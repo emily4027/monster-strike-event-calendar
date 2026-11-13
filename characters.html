@@ -32,6 +32,7 @@
                     <img id="user-avatar" alt="" class="rounded-circle" width="30" height="30" hidden>
                     <span id="user-display-name" class="fw-bold"></span>
                     <span id="admin-badge" class="admin-badge" hidden>管理員</span>
+                    <button type="button" id="edit-mode-btn" class="btn btn-sm btn-outline-primary" aria-pressed="false" hidden>編輯模式</button>
                     <button type="button" id="logout-btn" class="btn btn-sm btn-outline-secondary">登出</button>
                 </div>
             </div>
@@ -42,7 +43,7 @@
             <a href="characters.html" class="page-tab active" aria-current="page">📖 角色</a>
         </nav>
 
-        <p class="page-intro">整理所有帳號在抽卡統計裡抽到的角色（只讀取，不會修改抽卡紀錄）。</p>
+        <p class="page-intro normal-only">整理所有帳號在抽卡統計裡抽到的角色（只讀取，不會修改抽卡紀錄）。</p>
 
         <!-- 資料來源提示 -->
         <div id="source-notice" class="source-notice" hidden></div>
@@ -54,13 +55,26 @@
                     <label for="search-input" class="form-label">搜尋角色</label>
                     <input type="search" id="search-input" class="form-control" placeholder="輸入角色名稱" autocomplete="off">
                 </div>
-                <div>
+                <div class="edit-only">
+                    <label for="issue-filter" class="form-label">狀況</label>
+                    <select id="issue-filter" class="form-select">
+                        <option value="">全部角色（有狀況的排前面）</option>
+                        <option value="issues">只看有狀況的</option>
+                        <option value="new">爬蟲新增、還沒確認</option>
+                        <option value="missing">抽卡紀錄有、名冊沒有</option>
+                        <option value="nopool">限定但沒有卡池資料</option>
+                        <option value="noelement">沒有屬性</option>
+                        <option value="similar">和別的角色只差一個字</option>
+                        <option value="nodex">還沒填圖鑑編號</option>
+                    </select>
+                </div>
+                <div class="normal-only">
                     <label for="account-filter" class="form-label">帳號</label>
                     <select id="account-filter" class="form-select">
                         <option value="">全部帳號合計</option>
                     </select>
                 </div>
-                <div>
+                <div class="normal-only">
                     <label for="sort-select" class="form-label">排序</label>
                     <select id="sort-select" class="form-select">
                         <option value="recent">最近抽到</option>
@@ -68,16 +82,17 @@
                         <option value="name">名稱</option>
                     </select>
                 </div>
-                <div>
+                <div class="normal-only">
                     <label for="pool-filter" class="form-label">卡池</label>
                     <select id="pool-filter" class="form-select">
                         <option value="">全部角色</option>
                         <option value="limited">所有限定角色</option>
+                        <option value="period">期間限定角色</option>
                         <option value="collab">合作角色</option>
                         <option value="none">常駐角色</option>
                     </select>
                 </div>
-                <div>
+                <div class="normal-only">
                     <span class="form-label d-block">活動類型</span>
                     <div class="tag-filter-group" id="tag-filter-group">
                         <input type="checkbox" class="btn-check tag-filter" id="tag-filter-honke" value="honke" autocomplete="off">
@@ -94,6 +109,8 @@
 
         <!-- 角色列表 -->
         <div class="section-card mt-4">
+            <p id="edit-intro" class="edit-intro edit-only">編輯模式：列出角色名冊裡的所有角色，有狀況的排在前面。修改存檔後，這個網站立刻生效；抽卡統計的角色按鈕最慢隔天跟上。</p>
+            <datalist id="roster-names"></datalist>
             <div id="catalog-list" class="catalog-list"></div>
             <p id="empty-message" class="empty-message" hidden></p>
         </div>
@@ -131,6 +148,7 @@
 
     <script type="module" src="js/firebase.js"></script>
     <script src="pools.js" defer></script>
+    <script src="roster.js" defer></script>
     <script src="js/catalog.js" defer></script>
     <script src="js/common.js" defer></script>
     <script src="js/characters-page.js" defer></script>

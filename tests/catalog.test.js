@@ -122,6 +122,16 @@ test('卡池標記：限定角色標卡池、合作活動抽到的標活動名�
     assert.equal(of('哥布林'), null);
     assert.deepEqual(of('亞森'), { kind: 'limited', pools: ['精選角色 DX'] });
     assert.equal(poolOf(list.find((e) => e.name === '亞森'), null), null);
+    // 期間限定的卡池、名冊裡管理員指定的類別 (沒有卡池資料時才用)
+    const entry = (name) => ({ name, accounts: [] });
+    const options = { isPeriodPool: (p) => p === '聖誕節', kindOf: (n) => ({ '伏姬α': 'period', '舊限定': 'limited', '合作角': 'collab', '一休': 'regular' }[n] || '') };
+    const lookup = (n) => ({ '聖誕角': '聖誕節', '祭典角': '激獸神祭', '伏姬α': '' }[n] || '');
+    assert.deepEqual(poolOf(entry('聖誕角'), lookup, options), { kind: 'limited', pools: ['聖誕節'], period: true });
+    assert.deepEqual(poolOf(entry('祭典角'), lookup, options), { kind: 'limited', pools: ['激獸神祭'] });
+    assert.deepEqual(poolOf(entry('伏姬α'), lookup, options), { kind: 'limited', pools: [], period: true });
+    assert.deepEqual(poolOf(entry('舊限定'), lookup, options), { kind: 'limited', pools: [] });
+    assert.deepEqual(poolOf(entry('合作角'), lookup, options), { kind: 'collab', pools: [] });
+    assert.equal(poolOf(entry('一休'), lookup, options), null);
 });
 
 test('名稱修正：寫錯的名稱合併到正確名稱，記下原名稱', () => {

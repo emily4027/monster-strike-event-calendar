@@ -1,6 +1,7 @@
 # 每天台灣時間中午 12:00 (UTC 04:00) 抓官網的轉蛋公告：
 #   1. 新的轉蛋活動加進 Firestore 的活動清單 shared/events (直接寫入，只新增不覆蓋)
-#   2. 公告裡的卡池角色整理成 pools.json 的變動，開 PR 給管理員確認 (分支 pools-update)
+#   2. 管理員在角色頁編輯模式做的修改 (shared/roster) 寫回 characters.json 和 pools.json (直接 commit)
+#   3. 公告裡的卡池角色整理成 pools.json 的變動，開 PR 給管理員確認 (分支 pools-update)
 # GitHub 的排程常會晚幾分鐘到幾十分鐘才執行。也可以在 Actions 頁面手動執行 (Run workflow)，
 # 手動執行時勾選「歷史卡池回補」會改成從官網公告列表往回翻，補齊過去各期的卡池 (只開 PR，不改活動清單)；
 # 勾選「補上舊活動的公告連結」會把 scraper/fill-events.json 的結束日與公告連結補進活動清單 (一次性，只補空的欄位)。
@@ -29,7 +30,7 @@ on:
         default: false
 
 permissions:
-  contents: write        # commit scraper/log.md、scraper/seen.json；推 pools-update 分支
+  contents: write        # commit scraper/log.md、scraper/seen.json、characters.json、pools.json；推 pools-update 分支
   pull-requests: write   # 開卡池 PR
   issues: write          # 卡池只有需要手動處理的事時開 issue
 
@@ -73,7 +74,28 @@ jobs:
           git commit -m "爬蟲：更新活動清單紀錄 ($(TZ=Asia/Taipei date +%F))"
           git push
 
+      # 管理員在角色頁編輯模式做的修改寫回檔案。有開著的卡池 PR 時，新角色先不編號 (免得和 PR 裡的新角色撞號)
+      # 失敗時這個 job 會顯示失敗，但後面的卡池 PR 照常執行
+      - name: 寫回管理員對名冊的修改
+        env:
+          FIREBASE_SERVICE_ACCOUNT: ${{ secrets.FIREBASE_SERVICE_ACCOUNT }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          PR="$(gh pr list --head pools-update --state open --json number --jq '.[0].number // empty')"
+          node scraper/fold-roster.js ${PR:+--skip-adds}
+          node --test tests/roster.test.js
+          git add characters.json pools.json
+          if git diff --staged --quiet; then
+            echo "名冊沒有變動"
+            exit 0
+          fi
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git commit -m "名冊：寫回管理員的修改 ($(TZ=Asia/Taipei date +%F))"
+          git push
+
       - name: 卡池 PR
+        if: ${{ !cancelled() }}
         env:
           GH_TOKEN: ${{ github.token }}
         run: bash scraper/pool-pr.sh "$RUNNER_TEMP/pool-items.json" "卡池更新：官網新公告"

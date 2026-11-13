@@ -13,6 +13,7 @@
     // 資料位置 (抽卡統計改了路徑或欄位時，這裡也要一起改)
     const EVENTS_DOC = ['shared', 'events'];                // 活動清單 (所有人可讀)
     const EVENTS_FALLBACK_URL = '/monster-strike-gacha/events.json';   // 同網域，讀不到雲端時的備援
+    const ROSTER_EDITS_DOC = ['shared', 'roster'];          // 管理員對角色名冊的修改 (所有人可讀、管理員可寫；爬蟲每天寫回 characters.json)
     const NAME_FIXES_DOC = ['shared', 'characters'];        // 名稱修正 (所有人可讀、管理員可寫)
     const ADMINS_COLLECTION = 'admins';                     // admins/{uid} 存在即為管理員 (和抽卡統計共用)
     const GACHA_LOCAL_KEY = 'gachaRecords';                 // 抽卡統計的本機紀錄 (同網域共用)
@@ -103,10 +104,57 @@
         return Array.isArray(list) ? list : [];
     }
 
-    // 卡池讀不到時回傳空陣列 (只是不標卡池)
+    // 角色名冊：characters.json 套上管理員的修改檔 (Firestore shared/roster)，所以管理員的修改立刻生效。
+    //   修改檔讀不到時只用 characters.json。→ { base, edits, data (套用後的名冊), names: { 編號: 名稱 } }
+    //   同一個頁面只讀一次；force = true 時重新讀取
+    let rosterPromise = null;
+    function loadRoster(force) {
+        if (!rosterPromise || force) {
+            rosterPromise = (async () => {
+                const base = await fetchJson(ROSTER_URL);
+                let edits = null;
+                try {
+                    if (await waitForFirebase()) {
+                        const snap = await fns().getDoc(docRef(...ROSTER_EDITS_DOC));
+                        edits = snap.exists() ? snap.data() : null;
+                    }
+                } catch (e) {
+                    console.warn('[CLOUD] 讀不到管理員對名冊的修改，只用 characters.json', e);
+                }
+                return { base, edits, ...root.Roster.applyEdits(base, edits) };
+            })();
+            rosterPromise.catch(() => { rosterPromise = null; });
+        }
+        return rosterPromise;
+    }
+
+    // 管理員在編輯模式修改名冊：transaction 裡讀最新的修改檔，套用這一個修改後寫回
+    // (不會蓋掉其他管理員剛存的修改)。回傳新的名冊 (和 loadRoster 相同的格式)
+    async function saveRosterOp(op) {
+        const { base } = await loadRoster();
+        const ref = docRef(...ROSTER_EDITS_DOC);
+        let saved = null;
+        await fns().runTransaction(root.db, async (tx) => {
+            const snap = await tx.get(ref);
+            saved = root.Roster.applyOp(base, snap.exists() ? snap.data() : null, op);
+            tx.set(ref, { ...saved, updatedAt: fns().serverTimestamp() });
+        });
+        const result = { base, edits: saved, ...root.Roster.applyEdits(base, saved) };
+        rosterPromise = Promise.resolve(result);
+        return result;
+    }
+
+    // 卡池讀不到時回傳空陣列 (只是不標卡池)。角色名稱用名冊的 (含管理員剛改的)，名冊讀不到時用 pools.json 自己附的
     async function loadPools() {
         try {
-            return root.CharacterPools.readPools(await fetchJson(POOLS_URL));
+            const data = await fetchJson(POOLS_URL);
+            let names;
+            try {
+                names = { ...((data && data.names) || {}), ...(await loadRoster()).names };
+            } catch (e) {
+                console.warn('[DATA] 讀不到角色名冊，卡池用 pools.json 附的名稱', e);
+            }
+            return root.CharacterPools.readPools(data, names);
         } catch (e) {
             console.warn('[DATA] 讀不到 pools.json', e);
             return [];
@@ -118,7 +166,7 @@
     async function loadElementClasses() {
         const { poolKey } = root.CharacterPools;
         try {
-            const data = await fetchJson(ROSTER_URL);
+            const { data } = await loadRoster();
             const map = new Map();
             ((data && data.characters) || []).forEach((c) => {
                 const cls = ELEMENT_CLASS[c && c.element];
@@ -276,7 +324,7 @@
     root.Shared = {
         GACHA_LOCAL_KEY, THIS_TOOL,
         el, storage, waitForFirebase,
-        loadEvents, readLocalRecords, readCloudRecords, loadPools, loadElementClasses, loadNameFixes, saveNameFix, saveEventEdit, checkAdmin, poolsForEventCount,
+        loadEvents, readLocalRecords, readCloudRecords, loadPools, loadRoster, saveRosterOp, loadElementClasses, loadNameFixes, saveNameFix, saveEventEdit, checkAdmin, poolsForEventCount,
         setStatus, initAuth, loadToolboxMenu
     };
 })(this);
