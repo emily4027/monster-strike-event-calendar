@@ -32,13 +32,19 @@
     //   rerun：合作卡池用。true = 那期合作活動同時複刻的前幾彈 (卡池名稱是「主卡池・複刻 N」)，畫面上和這期的新角色分開顯示
     //   label：選填。複刻的卡池在畫面上的標題 (「第1彈」，或那個轉蛋自己的名稱)，沒有時顯示卡池名稱
     //   variant：選填。同一個月有兩個名單不同的同名轉蛋時，活動名稱含有這段文字的才用這個版本
+    //   chars：角色名冊 (characters.json) 的編號，例如 "c0012"。讀進來時換成名稱：
+    //          用傳入的 names ({ 編號: 名稱 })，沒有傳時用 pools.json 自己附的 names (寫檔時從名冊產生)。
+    //          查不到名稱的編號會略過；不是編號的字串當成名稱 (舊格式)
+    const ID_RE = /^c\d{4,}$/;
     const MONTH_RE = /^\d{4}-\d{2}$/;
     function readMonths(p) {
         const list = Array.isArray(p.months) ? p.months : (typeof p.since === 'string' ? [p.since] : []);
         return [...new Set(list.filter((m) => typeof m === 'string' && MONTH_RE.test(m)))].sort();
     }
-    function readPools(data) {
+    function readPools(data, names) {
         const list = data && Array.isArray(data.pools) ? data.pools : [];
+        const nameOf = names || (data && data.names) || {};
+        const toName = (c) => (ID_RE.test(c) ? String(nameOf[c] || '').trim() : c);
         return list
             .filter((p) => p && typeof p.pool === 'string' && Array.isArray(p.chars)
                 && (p.kind === 'limited' || p.kind === 'collab'))
@@ -52,7 +58,7 @@
                 variant: typeof p.variant === 'string' ? p.variant.trim() : '',
                 rerun: p.rerun === true,
                 label: typeof p.label === 'string' ? p.label.trim() : '',
-                chars: p.chars.filter((c) => typeof c === 'string' && c.trim()).map((c) => c.trim())
+                chars: p.chars.filter((c) => typeof c === 'string' && c.trim()).map((c) => toName(c.trim())).filter(Boolean)
             }));
     }
 
