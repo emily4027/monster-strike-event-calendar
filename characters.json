@@ -747,7 +747,7 @@
     {"id": "c0750", "name": "傑拉德・G・蒼野", "element": "水"},
     {"id": "c0751", "name": "凱特・西", "element": "闇"},
     {"id": "c0752", "name": "凱爵士", "element": "水"},
-    {"id": "c0753", "name": "喀隆α", "element": "闇", "kind": "period"},
+    {"id": "c0753", "name": "喀隆α", "element": "闇", "kind": "period", "aliases": ["青蛙公主 喀隆α"], "forms": [{"name":"If世界的可愛青蛙公主 喀隆α","form":"獸神化"}]},
     {"id": "c0754", "name": "喜多川祐介", "element": "水"},
     {"id": "c0755", "name": "喜咲亞理亞", "element": "火"},
     {"id": "c0756", "name": "喬瑟夫・喬斯達", "element": "闇"},
