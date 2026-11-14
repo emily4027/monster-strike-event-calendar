@@ -199,6 +199,8 @@ node apply-pools.js pool-items.json pool-report.md   # 會改 pools.json，看�
 
 ## 🧩 開發筆記
 
+每次功能或處理邏輯的變動，用白話寫在 [docs/更新筆記.md](docs/更新筆記.md)（做了什麼、為什麼、怎麼運作、沒驗證的部分）。
+
 純靜態 HTML + CSS + Vanilla JS，沒有建置工具。
 
 ```
