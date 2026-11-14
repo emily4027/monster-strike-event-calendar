@@ -197,7 +197,8 @@
     {"pool": "怪物彈珠聖誕節2025", "kind": "limited", "months": ["2025-12"], "source": "https://www.monster-strike.com.tw/news/20251201_02.html", "chars": ["c0398", "c0399", "c0400"]},
     {"pool": "Ultra Charismatic LIVE!!", "kind": "limited", "months": ["2026-07"], "source": "https://www.monster-strike.com.tw/news/20260709_01.html", "chars": ["c0285", "c0286", "c0287", "c0288", "c0289", "c0231", "c0290", "c0291", "c0292", "c0293", "c0294", "c0232", "c0268", "c0321", "c0310", "c0298"]},
     {"pool": "怪物彈珠暑假2026", "kind": "limited", "months": ["2026-08"], "source": "https://www.monster-strike.com.tw/news/20260801_02.html", "chars": ["c0401", "c0402", "c0403"]},
-    {"pool": "銀河冒險 II", "kind": "limited", "months": ["2026-11"], "source": "https://www.monster-strike.com.tw/news/20261101_01.html", "chars": ["c0404", "c0405", "c0406"]}
+    {"pool": "銀河冒險 II", "kind": "limited", "months": ["2026-11"], "source": "https://www.monster-strike.com.tw/news/20261101_01.html", "chars": ["c0404", "c0405", "c0406"]},
+    {"pool": "祝宴！怪物彈珠新娘 5", "kind": "limited", "months": ["2025-06"], "source": "https://www.monster-strike.com.tw/news/20250601_01.html", "chars": ["c0414", "c0601", "c0913"]}
   ],
   "names": {
     "c0001": "糸師 凜",
@@ -606,7 +607,10 @@
     "c0404": "鄭和",
     "c0405": "伊能忠敬",
     "c0406": "瓦斯科・達伽馬",
+    "c0414": "三途α",
+    "c0601": "物干竿α",
     "c0911": "飛舞於球場之音樂的大天使 聖德芬",
-    "c0912": "瞄準球門之契約的大天使 梅塔特隆"
+    "c0912": "瞄準球門之契約的大天使 梅塔特隆",
+    "c0913": "婚禮革新者・生存α"
   }
 }
