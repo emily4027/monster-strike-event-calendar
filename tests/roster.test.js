@@ -143,7 +143,7 @@ test('修改檔：存檔、新增、合併、確認不同角色；套用後網�
 test('修改檔：不合理的修改會丟出錯誤', () => {
     const base = BASE();
     assert.throws(() => R.applyOp(base, null, { type: 'save', id: 'c0003', character: { name: '' } }), /空白/);
-    assert.throws(() => R.applyOp(base, null, { type: 'save', id: 'c0003', character: { name: '拉姆' } }), /同時是/);
+    assert.throws(() => R.applyOp(base, null, { type: 'save', id: 'c0003', character: { name: '拉姆' } }), /「拉姆」同時是 c\d{4}.* 和 c\d{4}.*的名稱。如果是同一隻角色/);
     assert.throws(() => R.applyOp(base, null, { type: 'save', id: 'c0003', character: { name: '雷姆', aliases: ['洛基'] } }), /同時是/);
     assert.throws(() => R.applyOp(base, null, { type: 'save', id: 'c0003', character: { name: '雷姆', element: '風' } }), /屬性/);
     assert.throws(() => R.applyOp(base, null, { type: 'save', id: 'c0003', character: { name: '雷姆', forms: [{ no: '1.5', name: 'x' }] } }), /圖鑑編號/);

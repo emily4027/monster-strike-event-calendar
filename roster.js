@@ -48,6 +48,9 @@
             ...(Array.isArray(c.forms) ? c.forms.map((f) => f && f.name) : [])].map(clean).filter(Boolean);
     }
 
+    // 錯誤訊息裡的角色：編號，名稱和衝突的名稱不同時再附上名稱 (「c0390」、「c0282「無敵的…」」)
+    const charLabel = (c, n) => `${c.pending || !c.id ? '新角色' : c.id}${poolKey(c.name) === poolKey(n) ? '' : `「${c.name}」`}`;
+
     // 名冊 → { byId: Map<編號, 角色>, byKey: Map<比對用名稱, 角色>, problems: [說明] }
     //   problems：重複的編號、格式不對的編號、兩隻角色用到同一個名稱
     //   還沒有編號的新角色 (修改檔的 adds，pending: true) 不檢查編號
@@ -64,7 +67,7 @@
             namesOf(c).forEach((n) => {
                 const key = poolKey(n);
                 const other = byKey.get(key);
-                if (other && other !== c) problems.push(`「${n}」同時是「${other.name}」和「${c.name}」的名稱`);
+                if (other && other !== c) problems.push(`「${n}」同時是 ${charLabel(other, n)} 和 ${charLabel(c, n)} 的名稱`);
                 else byKey.set(key, c);
             });
         });
@@ -343,7 +346,7 @@
         const current = applyEdits(data, edits).data;
         const check = (candidate) => {
             const problems = indexRoster(applyEdits(data, candidate).data).problems;
-            if (problems.length) throw new Error(problems[0]);
+            if (problems.length) throw new Error(problems[0] + (/同時是/.test(problems[0]) ? '。如果是同一隻角色，請用「這隻其實是另一隻角色」合併過去' : ''));
         };
         const type = op && op.type;
         if (type === 'save') {
