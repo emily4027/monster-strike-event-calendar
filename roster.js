@@ -17,7 +17,9 @@
 //
 // 管理員在角色頁的編輯模式做的修改，先存在 Firestore shared/roster (「修改檔」)：
 //   { chars: { 編號: 整筆角色資料 }, merged: { 被合併的編號: 併進去的編號 },
-//     adds: [還沒有編號的新角色], distinct: ["編號|編號"] }
+//     adds: [還沒有編號的新角色], distinct: ["編號|編號"],
+//     pools: [{ id, pool, month, source }]：把角色加進那個月的限定卡池 (管理員手動補的，多半是 2023-09 以前的卡池)，
+//     unpools: [{ id, pool, month }]：把角色從那個月的限定卡池拿掉 }
 //   網頁讀 characters.json 後套上修改檔 (applyEdits)，所以修改立刻生效；
 //   爬蟲每天把修改檔寫回 characters.json 和 pools.json (foldEdits)，寫回去的部分下次執行時從修改檔清掉 (pruneEdits)。
 //
@@ -207,8 +209,48 @@
             chars: isObj(o.chars) ? Object.fromEntries(Object.entries(o.chars).filter(([id, c]) => ID_RE.test(id) && isObj(c) && clean(c.name))) : {},
             merged: isObj(o.merged) ? Object.fromEntries(Object.entries(o.merged).filter(([a, b]) => ID_RE.test(a) && ID_RE.test(b) && a !== b)) : {},
             adds: Array.isArray(o.adds) ? o.adds.filter((c) => isObj(c) && clean(c.name)) : [],
-            distinct: Array.isArray(o.distinct) ? o.distinct.filter((k) => typeof k === 'string' && /^c\d{4,}\|c\d{4,}$/.test(k)) : []
+            distinct: Array.isArray(o.distinct) ? o.distinct.filter((k) => typeof k === 'string' && /^c\d{4,}\|c\d{4,}$/.test(k)) : [],
+            pools: Array.isArray(o.pools) ? o.pools.filter(isPoolEdit).map((p) => ({ id: p.id, pool: clean(p.pool), month: p.month, ...(cleanSource(p.source) ? { source: cleanSource(p.source) } : {}) })) : [],
+            unpools: Array.isArray(o.unpools) ? o.unpools.filter(isPoolEdit).map((p) => ({ id: p.id, pool: clean(p.pool), month: p.month })) : []
         };
+    }
+
+    // =====================================================
+    // 管理員手動補的卡池 (修改檔的 pools / unpools)
+    // =====================================================
+    const MONTH_RE = /^\d{4}-(0[1-9]|1[0-2])$/;
+    const isPoolEdit = (p) => p && typeof p === 'object' && ID_RE.test(p.id || '') && clean(p.pool) && MONTH_RE.test(p.month || '');
+    const cleanSource = (s) => (/^https:\/\/\S+$/.test(clean(s)) ? clean(s) : '');
+    const poolEditKey = (p) => `${p.id}|${poolKey(p.pool)}|${p.month}`;
+    const monthsOf = (p) => (Array.isArray(p.months) ? p.months : typeof p.since === 'string' ? [p.since] : []);
+    // pools.json 裡那個月的限定卡池版本 (卡池名稱比對時忽略空白、全形半形)
+    const findVersion = (list, pool, month) => list.findIndex((p) => p && p.kind === 'limited'
+        && poolKey(p.pool) === poolKey(pool) && monthsOf(p).includes(month));
+
+    // pools.json (chars 是編號) 套上修改檔的 pools / unpools，回傳新的 pools.json (不改動傳入的物件)
+    //   加：那個月已經有這個卡池的版本 → 加進它的名單；沒有 → 新增一個版本 (卡池名稱沿用既有的寫法)
+    //   拿掉：從那個月的版本的名單拿掉；名單空了就整個版本拿掉
+    function applyPoolEdits(poolsData, rawEdits) {
+        const edits = readEdits(rawEdits);
+        if (!edits.pools.length && !edits.unpools.length) return poolsData;
+        const list = ((poolsData && poolsData.pools) || []).map((p) => ({ ...p, chars: [...(p.chars || [])] }));
+        edits.unpools.forEach((u) => {
+            const i = findVersion(list, u.pool, u.month);
+            if (i < 0) return;
+            list[i].chars = list[i].chars.filter((c) => c !== u.id);
+            if (!list[i].chars.length) list.splice(i, 1);
+        });
+        edits.pools.forEach((a) => {
+            const i = findVersion(list, a.pool, a.month);
+            if (i >= 0) {
+                if (!list[i].chars.includes(a.id)) list[i].chars.push(a.id);
+                if (!list[i].source && a.source) list[i].source = a.source;
+                return;
+            }
+            const known = list.find((p) => p && p.kind === 'limited' && poolKey(p.pool) === poolKey(a.pool));
+            list.push({ pool: known ? known.pool : a.pool, kind: 'limited', months: [a.month], ...(a.source ? { source: a.source } : {}), chars: [a.id] });
+        });
+        return { ...poolsData, pools: list };
     }
 
     // 被合併的編號最後併到哪一隻 (A 併到 B、B 又併到 C → C)
@@ -296,7 +338,8 @@
     // 不合理的修改會丟出錯誤，訊息可以直接顯示給使用者
     function applyOp(data, rawEdits, op) {
         const edits = readEdits(rawEdits);
-        const next = { chars: { ...edits.chars }, merged: { ...edits.merged }, adds: [...edits.adds], distinct: [...edits.distinct] };
+        const next = { chars: { ...edits.chars }, merged: { ...edits.merged }, adds: [...edits.adds], distinct: [...edits.distinct],
+            pools: [...edits.pools], unpools: [...edits.unpools] };
         const current = applyEdits(data, edits).data;
         const check = (candidate) => {
             const problems = indexRoster(applyEdits(data, candidate).data).problems;
@@ -347,6 +390,24 @@
             if (!ID_RE.test(op.a || '') || !ID_RE.test(op.b || '') || op.a === op.b) throw new Error('要選兩隻有編號的角色');
             if (!next.distinct.includes(pairKey(op.a, op.b))) next.distinct.push(pairKey(op.a, op.b));
             return next;
+        } else if (type === 'pool' || type === 'unpool') {
+            const c = listOf(current).find((x) => x.id === op.id && !x.pending);
+            if (!c) throw new Error(op.id ? '找不到這隻角色（可能已經被合併）' : '新角色要等爬蟲編號後才能加卡池');
+            const entry = { id: op.id, pool: clean(op.pool), month: clean(op.month) };
+            if (!entry.pool) throw new Error('要填卡池名稱');
+            if (!MONTH_RE.test(entry.month)) throw new Error('要選哪一年哪個月');
+            const key = poolEditKey(entry);
+            next.pools = next.pools.filter((p) => poolEditKey(p) !== key);
+            next.unpools = next.unpools.filter((p) => poolEditKey(p) !== key);
+            if (type === 'pool') {
+                const source = clean(op.source);
+                if (source && !cleanSource(source)) throw new Error('公告網址要是 https:// 開頭的網址');
+                next.pools.push({ ...entry, ...(source ? { source } : {}) });
+            } else if (!edits.pools.some((p) => poolEditKey(p) === key)) {
+                // 修改檔裡還沒寫回的「加」直接取消就好；已經在 pools.json 裡的才要記一筆「拿掉」
+                next.unpools.push(entry);
+            }
+            return next;
         } else {
             throw new Error('不認得的修改');
         }
@@ -380,9 +441,10 @@
         if (problems.length) throw new Error('套用管理員的修改後名冊有問題：\n' + problems.join('\n'));
 
         const { byId } = indexRoster(roster);
+        const withPools = applyPoolEdits(poolsData, edits);
         const remapped = {
-            ...poolsData,
-            pools: ((poolsData && poolsData.pools) || []).map((p) => {
+            ...withPools,
+            pools: ((withPools && withPools.pools) || []).map((p) => {
                 const chars = [];
                 (p.chars || []).forEach((id) => {
                     const to = ID_RE.test(id) ? mergeTarget(edits.merged, id) : id;
@@ -397,20 +459,27 @@
             names[id] = byId.get(id).name;
         }));
         remapped.names = Object.fromEntries(Object.entries(names).sort(([a], [b]) => a.localeCompare(b)));
-        const changed = Object.keys(edits.chars).length + Object.keys(edits.merged).length + added + edits.distinct.length;
+        const changed = Object.keys(edits.chars).length + Object.keys(edits.merged).length + added + edits.distinct.length
+            + edits.pools.length + edits.unpools.length;
         return { data: roster, pools: remapped, changed, skipped };
     }
 
     // 修改檔裡已經寫回 characters.json 的部分拿掉。data：已經 commit 的 characters.json
-    function pruneEdits(data, rawEdits) {
+    //   poolsData：已經 commit 的 pools.json (有給時，手動補的卡池也清掉已經寫回的部分)
+    function pruneEdits(data, rawEdits, poolsData) {
         const edits = readEdits(rawEdits);
         const { byId, byKey } = indexRoster(data);
         const have = new Set(((data && data.distinct) || []).map(([a, b]) => pairKey(a, b)));
+        const list = (poolsData && poolsData.pools) || [];
+        const inPool = (p) => { const i = findVersion(list, p.pool, p.month); return i >= 0 && (list[i].chars || []).includes(p.id); };
+        // 角色已經被合併掉 (名冊沒有這個編號) 的也清掉：寫回時已經換成併進去的那隻
         return {
             chars: Object.fromEntries(Object.entries(edits.chars).filter(([id, c]) => byId.has(id) && !same(cleanCharacter({ ...c, id }, true), cleanCharacter(byId.get(id), true)))),
             merged: Object.fromEntries(Object.entries(edits.merged).filter(([from]) => byId.has(from))),
             adds: edits.adds.filter((c) => !byKey.has(poolKey(c.name))),
-            distinct: edits.distinct.filter((k) => !have.has(k))
+            distinct: edits.distinct.filter((k) => !have.has(k)),
+            pools: poolsData ? edits.pools.filter((p) => byId.has(p.id) && !inPool(p)) : edits.pools,
+            unpools: poolsData ? edits.unpools.filter((p) => byId.has(p.id) && inPool(p)) : edits.unpools
         };
     }
 
@@ -459,7 +528,8 @@
     const api = {
         ID_RE, KINDS, FORMS, NOTE, namesOf, indexRoster, findCharacter, nextId, addCharacter,
         poolsToNames, poolsToIds, rosterOverrides, rosterElements, applyElements, formatRoster,
-        readEdits, mergeTarget, cleanCharacter, applyEdits, applyOp, foldEdits, pruneEdits, rosterIssues, hasDexNumbers
+        readEdits, mergeTarget, cleanCharacter, applyEdits, applyOp, foldEdits, pruneEdits, rosterIssues, hasDexNumbers,
+        applyPoolEdits
     };
     if (typeof module !== 'undefined' && module.exports) module.exports = api;
     else root.Roster = api;

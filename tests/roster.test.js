@@ -173,7 +173,7 @@ test('修改檔寫回檔案：新角色編號、被合併的編號在卡池裡�
     // 輸出 → 讀回來不變
     assert.deepEqual(JSON.parse(R.formatRoster(out.data)).distinct, [['c0003', 'c0004']]);
     // 寫回後，修改檔清空；再套一次不會變
-    assert.deepEqual(R.pruneEdits(out.data, e), { chars: {}, merged: {}, adds: [], distinct: [] });
+    assert.deepEqual(R.pruneEdits(out.data, e), { chars: {}, merged: {}, adds: [], distinct: [], pools: [], unpools: [] });
     assert.equal(R.foldEdits(out.data, out.pools, R.pruneEdits(out.data, e)).changed, 0);
     // 還沒寫回的留著
     assert.deepEqual(Object.keys(R.pruneEdits(base, e).chars).sort(), ['c0001', 'c0003']);
@@ -217,4 +217,48 @@ test('角色本身 (轉蛋抽到的形態) 的圖鑑編號', () => {
     assert.throws(() => R.applyOp(base, null, { type: 'save', id: 'c0005', character: { name: '伏姬α', no: '0' } }), /圖鑑編號/);
     const out = R.foldEdits(base, { pools: [] }, e);
     assert.match(R.formatRoster(out.data), /\{"id": "c0005", "name": "伏姬α", "no": 7794, "kind": "period", "forms"/);
+});
+
+test('手動補卡池：加進那個月的版本、新增版本、拿掉、寫回後清掉', () => {
+    const roster = ROSTER();
+    const pools = { pools: [
+        { pool: '祝宴！怪物彈珠新娘 4', kind: 'limited', months: ['2024-06'], chars: ['c0001'] }
+    ] };
+    let e = R.applyOp(roster, null, { type: 'pool', id: 'c0003', pool: '祝宴！怪物彈珠新娘4', month: '2024-06' });
+    e = R.applyOp(roster, e, { type: 'pool', id: 'c0002', pool: '怪物彈珠暑假2022', month: '2022-08', source: 'https://example.com/a.html' });
+    const applied = R.applyPoolEdits(pools, e);
+    assert.deepEqual(applied.pools[0].chars, ['c0001', 'c0003']);
+    assert.deepEqual(applied.pools[1], { pool: '怪物彈珠暑假2022', kind: 'limited', months: ['2022-08'], source: 'https://example.com/a.html', chars: ['c0002'] });
+    assert.equal(pools.pools.length, 1);   // 不改動傳入的物件
+    // 名稱查得到 (網頁用)
+    const named = readPools(applied, { c0001: '瑪娜', c0002: '波魯那雷夫', c0003: '約兒' });
+    assert.deepEqual(named[1].chars, ['波魯那雷夫']);
+    // 還沒寫回的「加」，拿掉時直接取消
+    const undone = R.applyOp(roster, e, { type: 'unpool', id: 'c0002', pool: '怪物彈珠暑假2022', month: '2022-08' });
+    assert.equal(undone.pools.length, 1);
+    assert.equal(undone.unpools.length, 0);
+    // 已經在 pools.json 裡的，記一筆「拿掉」；名單空了整個版本拿掉
+    const removed = R.applyOp(roster, null, { type: 'unpool', id: 'c0001', pool: '祝宴！怪物彈珠新娘 4', month: '2024-06' });
+    assert.deepEqual(R.applyPoolEdits(pools, removed).pools, []);
+    // 寫回 pools.json，下一次執行時從修改檔清掉
+    const out = R.foldEdits(roster, pools, e);
+    assert.equal(out.changed, 2);
+    assert.deepEqual(out.pools.pools[0].chars, ['c0001', 'c0003']);
+    assert.equal(out.pools.names.c0002, '約翰・皮耶爾・波魯那雷夫');
+    const pruned = R.pruneEdits(out.data, e, out.pools);
+    assert.deepEqual([pruned.pools, pruned.unpools], [[], []]);
+    assert.equal(R.pruneEdits(roster, removed, pools).unpools.length, 1);
+    assert.equal(R.pruneEdits(roster, removed, R.applyPoolEdits(pools, removed)).unpools.length, 0);
+});
+
+test('手動補卡池：不合理的輸入', () => {
+    const roster = ROSTER();
+    assert.throws(() => R.applyOp(roster, null, { type: 'pool', id: 'c0001', pool: ' ', month: '2024-06' }), /卡池名稱/);
+    assert.throws(() => R.applyOp(roster, null, { type: 'pool', id: 'c0001', pool: '甲', month: '2024-13' }), /哪個月/);
+    assert.throws(() => R.applyOp(roster, null, { type: 'pool', id: 'c0001', pool: '甲', month: '2024-06', source: 'javascript:alert(1)' }), /網址/);
+    assert.throws(() => R.applyOp(roster, null, { type: 'pool', id: 'c0999', pool: '甲', month: '2024-06' }), /找不到/);
+    assert.throws(() => R.applyOp(roster, null, { type: 'pool', id: '', pool: '甲', month: '2024-06' }), /編號後/);
+    // 修改檔裡格式不對的會被略過
+    assert.deepEqual(R.readEdits({ pools: [{ id: 'c0001', pool: '甲', month: '2024-6' }, { id: 'c0001', pool: '甲', month: '2024-06', source: 'http://x' }] }).pools,
+        [{ id: 'c0001', pool: '甲', month: '2024-06' }]);
 });

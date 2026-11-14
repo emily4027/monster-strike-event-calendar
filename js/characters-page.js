@@ -56,7 +56,8 @@ document.addEventListener('DOMContentLoaded', () => {
         adminBadge: $('admin-badge'),
         editBtn: $('edit-mode-btn'),
         issueFilter: $('issue-filter'),
-        rosterNames: $('roster-names')
+        rosterNames: $('roster-names'),
+        poolNames: $('pool-names')
     };
 
     let records = [];
@@ -198,6 +199,12 @@ document.addEventListener('DOMContentLoaded', () => {
             els.pool.appendChild(opt);
         });
         els.pool.value = [...els.pool.options].some((o) => o.value === current) ? current : '';
+        // 編輯模式「出自卡池」的名稱選項
+        els.poolNames.replaceChildren(...[...new Set(pools.filter((p) => p.kind === 'limited').map((p) => p.pool))].map((name) => {
+            const o = el('option');
+            o.value = name;
+            return o;
+        }));
     }
 
     const selectedTags = () => els.tagFilters.filter((c) => c.checked).map((c) => c.value);
@@ -439,6 +446,7 @@ document.addEventListener('DOMContentLoaded', () => {
             openName = keepOpen || '';
             pools = await S.loadPools();
             limitedOf = buildLimitedLookup(pools);
+            renderPoolOptions();
             elementClass = await S.loadElementClasses();
             render();
         } catch (e) {
@@ -598,6 +606,7 @@ document.addEventListener('DOMContentLoaded', () => {
                 () => saveRosterOp({ type: 'distinct', a: c.id, b: otherId }, c.name, error)));
         }));
         form.appendChild(actions);
+        if (c.id) form.appendChild(renderPoolEditor(c, error));
 
         // 這隻其實是另一隻角色：併成對方的別名或形態
         const target = el('input', 'form-control form-control-sm');
@@ -616,6 +625,46 @@ document.addEventListener('DOMContentLoaded', () => {
         form.appendChild(labeled('這隻其實是另一隻角色', mergeRow, '合併後不能直接復原'));
         form.appendChild(error);
         return form;
+    }
+
+    // 出自卡池：列出這隻角色在哪些卡池，管理員可以手動補 (多半是爬蟲讀不到的 2023-09 以前的卡池)。按了就存，不用按「儲存」
+    function renderPoolEditor(c, error) {
+        const keys = new Set(Roster.namesOf(c).map(poolKey));
+        const wrap = el('div', 'roster-pools');
+        const mine = pools.filter((p) => p.chars.some((n) => keys.has(poolKey(n))));
+        const list = el('ul', 'roster-pool-list');
+        if (!mine.length) list.appendChild(el('li', 'hint', '還沒有卡池資料'));
+        mine.forEach((p) => {
+            const li = el('li');
+            const when = p.kind === 'collab' ? '合作' : p.months.length ? p.months.join('、') : '官網的限定角色名單';
+            li.appendChild(el('span', '', `${p.pool}（${when}）`));
+            // 官網的限定角色名單 (沒有月份) 和合作卡池不能在這裡拿掉
+            if (p.kind === 'limited' && p.months.length) {
+                li.appendChild(smallButton('拿掉', 'btn-outline-secondary', () => {
+                    if (!confirm(`把「${c.name}」從「${p.pool}」（${p.months.join('、')}）拿掉？`)) return;
+                    error.textContent = '';
+                    saveRosterOp({ type: 'unpool', id: c.id, pool: p.pool, month: p.months[0] }, c.name, error);
+                }));
+            }
+            list.appendChild(li);
+        });
+        const pool = el('input', 'form-control form-control-sm');
+        pool.type = 'text';
+        pool.placeholder = '卡池名稱，例如：祝宴！怪物彈珠新娘 4';
+        pool.setAttribute('list', 'pool-names');
+        const month = el('input', 'form-control form-control-sm');
+        month.type = 'month';
+        month.title = '哪一年哪個月的轉蛋';
+        const source = el('input', 'form-control form-control-sm');
+        source.type = 'url';
+        source.placeholder = '公告網址（選填）';
+        const row = el('div', 'roster-pool-add');
+        row.append(pool, month, source, smallButton('加到卡池', 'btn-outline-primary', () => {
+            error.textContent = '';
+            saveRosterOp({ type: 'pool', id: c.id, pool: pool.value, month: month.value, source: source.value }, c.name, error);
+        }));
+        wrap.append(list, row);
+        return labeled('出自卡池', wrap, '按「加到卡池」就存，不用再按儲存。同一個月已經有這個卡池時，會加進它的名單');
     }
 
     function bindFilters() {

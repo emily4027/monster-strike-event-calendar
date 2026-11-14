@@ -144,17 +144,22 @@
         return result;
     }
 
-    // 卡池讀不到時回傳空陣列 (只是不標卡池)。角色名稱用名冊的 (含管理員剛改的)，名冊讀不到時用 pools.json 自己附的
+    // 卡池讀不到時回傳空陣列 (只是不標卡池)。角色名稱用名冊的 (含管理員剛改的)，名冊讀不到時用 pools.json 自己附的。
+    // 管理員在編輯模式手動補的卡池也套上
     async function loadPools() {
         try {
             const data = await fetchJson(POOLS_URL);
             let names;
+            let pools = data;
             try {
-                names = { ...((data && data.names) || {}), ...(await loadRoster()).names };
+                const r = await loadRoster();
+                names = { ...((data && data.names) || {}), ...r.names };
+                // 管理員手動補的卡池 (還沒寫回 pools.json 的) 立刻生效
+                pools = root.Roster.applyPoolEdits(data, r.edits);
             } catch (e) {
                 console.warn('[DATA] 讀不到角色名冊，卡池用 pools.json 附的名稱', e);
             }
-            return root.CharacterPools.readPools(data, names);
+            return root.CharacterPools.readPools(pools, names);
         } catch (e) {
             console.warn('[DATA] 讀不到 pools.json', e);
             return [];

@@ -33,6 +33,7 @@ async function main() {
     const rosterText = readText(ROSTER_FILE);
     const poolsText = readText(POOLS_FILE);
     const committed = JSON.parse(rosterText);
+    const committedPools = JSON.parse(poolsText);
     const snap = await ref.get();
     if (!snap.exists) { console.log('名冊：沒有管理員的修改'); return; }
     const edits = R.readEdits(snap.data());
@@ -42,13 +43,13 @@ async function main() {
         await getFirestore().runTransaction(async (tx) => {
             const latest = await tx.get(ref);
             const now = R.readEdits(latest.exists ? latest.data() : null);
-            const pruned = R.pruneEdits(committed, now);
+            const pruned = R.pruneEdits(committed, now, committedPools);
             if (!same(pruned, now)) tx.set(ref, { ...pruned, updatedAt: FieldValue.serverTimestamp() });
         });
     }
 
     // 2. 剩下的寫回檔案
-    const out = R.foldEdits(committed, JSON.parse(poolsText), R.pruneEdits(committed, edits), { skipAdds });
+    const out = R.foldEdits(committed, committedPools, R.pruneEdits(committed, edits, committedPools), { skipAdds });
     const newRoster = R.formatRoster(out.data);
     const newPools = formatPoolsJson(out.pools);
     console.log(`名冊：寫回 ${out.changed} 項修改${out.skipped ? `，${out.skipped} 隻新角色等卡池 PR 處理完再編號` : ''}`);
