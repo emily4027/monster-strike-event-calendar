@@ -531,10 +531,15 @@ document.addEventListener('DOMContentLoaded', () => {
         const name = el('input', 'form-control form-control-sm');
         name.type = 'text';
         name.value = c.name;
+        const dex = el('input', 'form-control form-control-sm');
+        dex.type = 'number';
+        dex.min = '1';
+        dex.placeholder = '圖鑑編號';
+        dex.value = c.no || '';
         const element = selectOf([['', '（沒有）'], ...['火', '水', '木', '光', '闇'].map((e) => [e, e])], c.element);
         const kind = selectOf([['', '不確定'], ...Object.entries(Roster.KINDS)], c.kind);
         const fields = el('div', 'roster-fields');
-        fields.append(labeled('名稱', name), labeled('屬性', element), labeled('類別', kind, '期間限定一律套用；其他只在不屬於任何卡池時才用'));
+        fields.append(labeled('名稱', name), labeled('圖鑑編號', dex, '轉蛋抽到的這個形態'), labeled('屬性', element), labeled('類別', kind, '期間限定一律套用；其他只在不屬於任何卡池時才用'));
         form.appendChild(fields);
 
         const aliases = el('textarea', 'form-control form-control-sm');
@@ -563,12 +568,12 @@ document.addEventListener('DOMContentLoaded', () => {
             formsWrap.appendChild(r);
         };
         (c.forms || []).forEach(addFormRow);
-        const formsBox = labeled('形態', formsWrap, '進化後的名稱和遊戲裡的圖鑑編號');
+        const formsBox = labeled('其他形態', formsWrap, '進化後的名稱和遊戲裡的圖鑑編號');
         formsBox.appendChild(smallButton('＋ 加一個形態', 'btn-outline-secondary', () => addFormRow()));
         form.appendChild(formsBox);
 
         const read = () => ({
-            name: name.value, element: element.value, kind: kind.value,
+            name: name.value, no: dex.value, element: element.value, kind: kind.value,
             aliases: aliases.value.split('\n'),
             poolAliases: c.poolAliases,
             forms: [...formsWrap.children].map((r) => r.read())

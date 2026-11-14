@@ -149,6 +149,8 @@ test('修改檔：不合理的修改會丟出錯誤', () => {
     assert.throws(() => R.applyOp(base, null, { type: 'save', id: 'c0003', character: { name: '雷姆', forms: [{ no: '1.5', name: 'x' }] } }), /圖鑑編號/);
     assert.throws(() => R.applyOp(base, null, { type: 'save', id: 'c9999', character: { name: '甲' } }), /找不到/);
     assert.throws(() => R.applyOp(base, null, { type: 'add', character: { name: '洛基' } }), /已經在名冊裡/);
+    const withForm = { characters: [{ id: 'c0001', name: '洛基', forms: [{ name: '終結九界者 洛基' }] }] };
+    assert.throws(() => R.applyOp(withForm, null, { type: 'add', character: { name: '新名字', forms: [{ name: '終結九界者 洛基' }] } }), /「終結九界者 洛基」已經是「洛基」的名稱/);
     assert.throws(() => R.applyOp(base, null, { type: 'merge', from: 'c0001', into: 'c0001' }), /找不到|自己/);
     assert.throws(() => R.applyOp(base, null, { type: 'x' }), /不認得/);
 });
@@ -204,4 +206,15 @@ test('有狀況的角色：依嚴重程度排前面，並說明是什麼狀況',
     // 確認是不同角色後不再提示
     const confirmed = R.rosterIssues({ ...base, distinct: [['c0004', 'c0003']] }, { similarOf: new Map([['雷姆', ['拉姆']]]) });
     assert.equal(confirmed.find((r) => r.character.name === '雷姆').issues.some((i) => i.type === 'similar'), false);
+});
+
+test('角色本身 (轉蛋抽到的形態) 的圖鑑編號', () => {
+    const base = BASE();
+    const e = R.applyOp(base, null, { type: 'save', id: 'c0005', character: { name: '伏姬α', no: '7794', kind: 'period', forms: [{ name: '甘美的狼仙女 伏姬α', form: '獸神化', no: 7795 }] } });
+    assert.deepEqual(e.chars.c0005, { id: 'c0005', name: '伏姬α', no: 7794, kind: 'period', forms: [{ no: 7795, name: '甘美的狼仙女 伏姬α', form: '獸神化' }] });
+    assert.equal(R.hasDexNumbers({ name: 'x', no: 1 }), true);
+    assert.equal(R.hasDexNumbers({ name: 'x' }), false);
+    assert.throws(() => R.applyOp(base, null, { type: 'save', id: 'c0005', character: { name: '伏姬α', no: '0' } }), /圖鑑編號/);
+    const out = R.foldEdits(base, { pools: [] }, e);
+    assert.match(R.formatRoster(out.data), /\{"id": "c0005", "name": "伏姬α", "no": 7794, "kind": "period", "forms"/);
 });

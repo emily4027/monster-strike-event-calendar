@@ -4,7 +4,7 @@
 //
 // characters.json：
 //   { "說明": "...", "characters": [
-//       { "id": "c0001", "name": "瑪娜", "element": "光",
+//       { "id": "c0001", "name": "瑪娜", "no": 1234, "element": "光",   // no：選填，轉蛋抽到的這個形態的圖鑑編號
 //         "kind": "period",                              // 選填：類別，只在角色不屬於任何卡池時才用 (見 KINDS)
 //         "new": true,                                   // 選填：爬蟲新編的編號，管理員還沒確認
 //         "aliases": ["別的寫法"],                       // 選填：同一隻角色的其他寫法 (管理員確認過)
@@ -33,7 +33,7 @@
     // 類別：由管理員指定。期間限定在卡池裡也套用 (祭典裡的特別造型標「期間限定：激獸神祭」)；其他只在角色不屬於任何卡池時才用
     const KINDS = { limited: '限定', period: '期間限定', collab: '合作', regular: '常駐' };
     const FORMS = ['進化前', '進化', '神化', '獸神化', '獸神化・改', '真獸神化'];
-    const NOTE = '角色名冊。id：內部編號，編了就不改、不重複使用，pools.json 的 chars 寫的是這個編號。name：台版官網的寫法。element：屬性 (火水木光闇)，網頁用來替名稱上色。kind：類別 (limited 限定 / period 期間限定 / collab 合作 / regular 常駐)。期間限定在卡池裡也套用 (祭典裡的特別造型)，其他只在角色不屬於任何卡池時才用。new：爬蟲新編的編號，管理員還沒確認。aliases：同一隻角色的其他寫法。poolAliases：只在那個卡池才算這隻角色的寫法 { 卡池名稱: [寫法] }。forms：各形態 [{ no: 遊戲的圖鑑編號, name: 名稱, form: 形態 }]。distinct：名稱只差一個字、確認是不同角色的兩隻。平常在角色頁的編輯模式修改 (爬蟲每天寫回這個檔案)；爬蟲讀到名冊沒有的名稱時會編新的編號，已經有的資料不會被爬蟲覆蓋。';
+    const NOTE = '角色名冊。id：內部編號，編了就不改、不重複使用，pools.json 的 chars 寫的是這個編號。name：台版官網的寫法。no：轉蛋抽到的這個形態在遊戲裡的圖鑑編號。element：屬性 (火水木光闇)，網頁用來替名稱上色。kind：類別 (limited 限定 / period 期間限定 / collab 合作 / regular 常駐)。期間限定在卡池裡也套用 (祭典裡的特別造型)，其他只在角色不屬於任何卡池時才用。new：爬蟲新編的編號，管理員還沒確認。aliases：同一隻角色的其他寫法。poolAliases：只在那個卡池才算這隻角色的寫法 { 卡池名稱: [寫法] }。forms：各形態 [{ no: 遊戲的圖鑑編號, name: 名稱, form: 形態 }]。distinct：名稱只差一個字、確認是不同角色的兩隻。平常在角色頁的編輯模式修改 (爬蟲每天寫回這個檔案)；爬蟲讀到名冊沒有的名稱時會編新的編號，已經有的資料不會被爬蟲覆蓋。';
 
     const listOf = (data) => (data && Array.isArray(data.characters) ? data.characters : []);
     const clean = (s) => (typeof s === 'string' ? s.trim() : '');
@@ -185,7 +185,7 @@
 
     // characters.json 的寫法：一隻角色一行，依編號排序
     function formatRoster(data) {
-        const order = ['id', 'name', 'element', 'kind', 'new', 'aliases', 'poolAliases', 'forms'];
+        const order = ['id', 'name', 'no', 'element', 'kind', 'new', 'aliases', 'poolAliases', 'forms'];
         const line = (c) => {
             const keys = [...order.filter((k) => k in c), ...Object.keys(c).filter((k) => !order.includes(k))];
             return `{${keys.map((k) => `${JSON.stringify(k)}: ${JSON.stringify(c[k])}`).join(', ')}}`;
@@ -226,6 +226,13 @@
         const out = {};
         if (c.id) out.id = c.id;
         out.name = name;
+        const dexNo = (v) => {
+            if (v === undefined || v === null || v === '') return null;
+            const n = Number(v);
+            if (!Number.isInteger(n) || n < 1) throw new Error('圖鑑編號要是正整數');
+            return n;
+        };
+        if (dexNo(c.no) !== null) out.no = dexNo(c.no);
         if (c.element) {
             if (!ELEMENT_RE.test(c.element)) throw new Error('屬性要是火、水、木、光、闇其中一個');
             out.element = c.element;
@@ -302,8 +309,14 @@
             next.chars[op.id] = cleanCharacter({ ...op.character, id: op.id }, false);
         } else if (type === 'add') {
             const character = cleanCharacter({ ...op.character, id: undefined }, false);
-            const clash = namesOf(character).map((n) => indexRoster({ characters: listOf(current).filter((c) => !(c.pending && poolKey(c.name) === poolKey(op.original || character.name))) }).byKey.get(poolKey(n))).find(Boolean);
-            if (clash) throw new Error(`「${clash.name}」已經在名冊裡（不能同時是兩隻角色的名稱）`);
+            const others = indexRoster({ characters: listOf(current).filter((c) => !(c.pending && poolKey(c.name) === poolKey(op.original || character.name))) }).byKey;
+            const taken = namesOf(character).find((n) => others.has(poolKey(n)));
+            if (taken) {
+                const owner = others.get(poolKey(taken));
+                throw new Error(poolKey(owner.name) === poolKey(taken)
+                    ? `「${taken}」已經在名冊裡。是同一隻的話請用「合併過去」`
+                    : `「${taken}」已經是「${owner.name}」的名稱。是同一隻的話請用「合併過去」`);
+            }
             next.adds = next.adds.filter((c) => poolKey(c.name) !== poolKey(op.original || character.name));
             next.adds.push(character);
         } else if (type === 'merge') {
@@ -441,7 +454,7 @@
         return rows.map((r, i) => ({ r, i })).sort((a, b) => rank(a.r) - rank(b.r) || a.i - b.i).map((x) => x.r);
     }
 
-    const hasDexNumbers = (c) => Array.isArray(c.forms) && c.forms.some((f) => f && f.no);
+    const hasDexNumbers = (c) => !!c.no || (Array.isArray(c.forms) && c.forms.some((f) => f && f.no));
 
     const api = {
         ID_RE, KINDS, FORMS, NOTE, namesOf, indexRoster, findCharacter, nextId, addCharacter,
