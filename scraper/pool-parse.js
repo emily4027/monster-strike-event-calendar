@@ -143,6 +143,29 @@ function rateUpSpecials(leadHtml) {
         .filter((name) => !/^\S*造型\s/.test(name));
 }
 
+// 「介紹在轉蛋中登場的期間限定角色」段落 (到下一個標題為止) 裡的角色：
+//   「光屬性 ★6 飛舞於球場之音樂的大天使 聖德芬<br>（獸神化・改）」→ { name, element }。名稱就是轉出來的那個形態 (特別造型)
+//   gacha：段落前後「在轉蛋「激獸神祭」中登場」寫的轉蛋名稱 (沒有時空字串)
+const PERIOD_SECTION_RE = /轉蛋中登場的期間限定角色/;
+const PERIOD_CHAR_RE = /^([火水木光闇])屬性\s*★6\s*(.+?)\s*[（(][^（）()]*(?:獸神化|神化|進化)[^（）()]*[）)]$/;
+function periodSections(html) {
+    const text = String(html);
+    const headings = [...text.matchAll(/<(h[1-6])\b[^>]*>([\s\S]*?)<\/\1>/gi)];
+    return headings.flatMap((h, i) => {
+        if (!PERIOD_SECTION_RE.test(plainText(h[2]))) return [];
+        const start = h.index + h[0].length;
+        const body = text.slice(start, i + 1 < headings.length ? headings[i + 1].index : text.length);
+        const before = text.slice(i > 0 ? headings[i - 1].index : 0, h.index);
+        const g = plainText(before + body).match(/轉蛋「([^「」]+)」/);
+        const names = decodeEntities(body.replace(/<br\s*\/?>/gi, ' ').replace(/<\/p>|<\/div>|<\/li>/gi, '\n').replace(/<[^>]+>/g, ''))
+            .replace(/ /g, ' ').split('\n')
+            .map((line) => line.trim().replace(/\s+/g, ' ').match(PERIOD_CHAR_RE))
+            .filter(Boolean)
+            .map((m) => ({ element: m[1], name: m[2].trim() }));
+        return names.length ? [{ gacha: g ? g[1].trim() : '', names }] : [];
+    });
+}
+
 // 限定角色表：
 //   limited：[{ header, poolName (「X」限定角色的 X，沒有時空字串), names }]
 //   elements：{ 木: [...], 闇: [...] }，「木屬性」「闇屬性」這種依屬性分的名單
@@ -194,6 +217,12 @@ function parseLimitedTables(html) {
         // 這張表前面的特別造型：記在這張表的第一份名單，全部讀完再加 (見下面)
         if (limited[before]) specials.push({ list: limited[before], names: rateUpSpecials(lead) });
     }
+    // 「介紹在轉蛋中登場的期間限定角色」段落：那期才有的特別造型 (「日本國家足球隊」造型的聖德芬)，表格裡沒有
+    if (limited.length > 0) periodSections(html).forEach(({ gacha, names }) => {
+        const list = limited.find((l) => gacha && poolKey(l.poolName) === poolKey(gacha)) || limited[0];
+        specials.push({ list, names: names.map((n) => n.name) });
+        names.forEach((n) => { elementOf[n.name] = n.element; });
+    });
     // 特別造型加在名單最後。公告的名單裡已經有同一隻時不加：名稱相同，或這個名稱的每一段都在某個名稱裡
     // (官網漏字：「賜予神之光開啟天國者 MV」，後面的期間限定角色表是「賜予神之光開啟天國者 烏列爾 MV」)
     const listed = limited.flatMap((l) => l.names);

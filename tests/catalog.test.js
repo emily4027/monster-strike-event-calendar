@@ -128,6 +128,9 @@ test('卡池標記：限定角色標卡池、合作活動抽到的標活動名�
     const lookup = (n) => ({ '聖誕角': '聖誕節', '祭典角': '激獸神祭', '伏姬α': '' }[n] || '');
     assert.deepEqual(poolOf(entry('聖誕角'), lookup, options), { kind: 'limited', pools: ['聖誕節'], period: true });
     assert.deepEqual(poolOf(entry('祭典角'), lookup, options), { kind: 'limited', pools: ['激獸神祭'] });
+    // 祭典裡的特別造型：名冊標了期間限定
+    const special = { ...options, kindOf: (n) => (n === '祭典角' ? 'period' : '') };
+    assert.deepEqual(poolOf(entry('祭典角'), lookup, special), { kind: 'limited', pools: ['激獸神祭'], period: true });
     assert.deepEqual(poolOf(entry('伏姬α'), lookup, options), { kind: 'limited', pools: [], period: true });
     assert.deepEqual(poolOf(entry('舊限定'), lookup, options), { kind: 'limited', pools: [] });
     assert.deepEqual(poolOf(entry('合作角'), lookup, options), { kind: 'collab', pools: [] });

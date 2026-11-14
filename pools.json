@@ -105,7 +105,8 @@
     {"pool": "激獸神祭", "kind": "limited", "months": ["2026-01", "2026-02"], "source": "https://www.monster-strike.com.tw/news/20260113_01.html", "chars": ["c0228", "c0215", "c0216", "c0230", "c0217", "c0218", "c0232", "c0220", "c0234", "c0222", "c0223", "c0236", "c0224", "c0225"]},
     {"pool": "激獸神祭", "kind": "limited", "months": ["2026-03"], "source": "https://www.monster-strike.com.tw/news/20260306_01.html", "chars": ["c0228", "c0215", "c0216", "c0230", "c0217", "c0218", "c0232", "c0220", "c0221", "c0234", "c0222", "c0223", "c0236", "c0224", "c0225"]},
     {"pool": "激獸神祭", "kind": "limited", "months": ["2026-04", "2026-05", "2026-06"], "source": "https://www.monster-strike.com.tw/news/20260328_cm.html", "chars": ["c0215", "c0216", "c0217", "c0218", "c0220", "c0221", "c0222", "c0223", "c0224", "c0225"]},
-    {"pool": "激獸神祭", "kind": "limited", "match": ["激獸神祭", "=世足激獸神"], "months": ["2026-07", "2026-08"], "source": "https://www.monster-strike.com.tw/news/20260702_wc.html", "chars": ["c0215", "c0216", "c0217", "c0218", "c0220", "c0221", "c0222", "c0223", "c0224", "c0225", "c0226"]},
+    {"pool": "激獸神祭", "kind": "limited", "match": ["激獸神祭", "=世足激獸神"], "months": ["2026-07"], "source": "https://www.monster-strike.com.tw/news/20260702_wc.html", "chars": ["c0215", "c0216", "c0217", "c0218", "c0220", "c0221", "c0222", "c0223", "c0224", "c0225", "c0226", "c0911", "c0912"]},
+    {"pool": "激獸神祭", "kind": "limited", "match": ["激獸神祭"], "months": ["2026-08"], "source": "https://www.monster-strike.com.tw/news/20260702_wc.html", "chars": ["c0215", "c0216", "c0217", "c0218", "c0220", "c0221", "c0222", "c0223", "c0224", "c0225", "c0226"]},
     {"pool": "激獸神祭", "kind": "limited", "match": ["激獸神祭"], "months": ["2026-09", "2026-10", "2026-11"], "source": "https://www.monster-strike.com.tw/news/20260911_02.html", "chars": ["c0215", "c0216", "c0217", "c0218", "c0219", "c0220", "c0221", "c0222", "c0223", "c0224", "c0225", "c0226"]},
     {"pool": "彩獸神祭", "kind": "limited", "source": "https://www.monster-strike.com.tw/tips/20260609_ch.html", "chars": ["c0240", "c0241"]},
     {"pool": "彩獸神祭", "kind": "limited", "months": ["2026-08"], "source": "https://www.monster-strike.com.tw/news/20260807_01.html", "chars": ["c0240", "c0241"]},
@@ -604,6 +605,8 @@
     "c0403": "尤克特拉希爾α",
     "c0404": "鄭和",
     "c0405": "伊能忠敬",
-    "c0406": "瓦斯科・達伽馬"
+    "c0406": "瓦斯科・達伽馬",
+    "c0911": "飛舞於球場之音樂的大天使 聖德芬",
+    "c0912": "瞄準球門之契約的大天使 梅塔特隆"
   }
 }

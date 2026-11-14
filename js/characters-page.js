@@ -490,7 +490,7 @@ document.addEventListener('DOMContentLoaded', () => {
         main.appendChild(el('span', `catalog-name ${elementClass(c.name)}`, c.name));
         if (c.id) main.appendChild(el('span', 'roster-id', c.id));
         const limited = limitedOf(c.name);
-        if (limited) main.appendChild(el('span', 'pool-badge pool-limited', `${isPeriodPool(limited) ? '期間限定' : '限定'}：${limited}`));
+        if (limited) main.appendChild(el('span', 'pool-badge pool-limited', `${isPeriodPool(limited) || c.kind === 'period' ? '期間限定' : '限定'}：${limited}`));
         else if (c.kind) main.appendChild(el('span', `pool-badge pool-${c.kind === 'collab' ? 'collab' : 'limited'}`, Roster.KINDS[c.kind]));
         row.issues.forEach((i) => main.appendChild(el('span', `issue-badge issue-${i.type}`, i.text)));
         summary.appendChild(main);
@@ -534,7 +534,7 @@ document.addEventListener('DOMContentLoaded', () => {
         const element = selectOf([['', '（沒有）'], ...['火', '水', '木', '光', '闇'].map((e) => [e, e])], c.element);
         const kind = selectOf([['', '不確定'], ...Object.entries(Roster.KINDS)], c.kind);
         const fields = el('div', 'roster-fields');
-        fields.append(labeled('名稱', name), labeled('屬性', element), labeled('類別', kind, '不屬於任何卡池時才用'));
+        fields.append(labeled('名稱', name), labeled('屬性', element), labeled('類別', kind, '期間限定一律套用；其他只在不屬於任何卡池時才用'));
         form.appendChild(fields);
 
         const aliases = el('textarea', 'form-control form-control-sm');

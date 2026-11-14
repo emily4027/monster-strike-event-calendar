@@ -479,3 +479,19 @@ test('管理員補的角色 (extras)：加在那篇公告、那個卡池的名�
         ['世代 2018', ['瑪娜', '摩西', '聖誕造型的瑪娜']]
     ]);
 });
+
+test('「介紹在轉蛋中登場的期間限定角色」段落的特別造型也算這期卡池 (名稱是轉出的形態，屬性照段落)', () => {
+    const html = '<table><tbody><tr><th>「激獸神祭」限定角色</th></tr><tr><td>阿露卡　伊呂波</td></tr></tbody></table>'
+        + '<p>「日本國家足球隊」造型的「聖德芬」在轉蛋「激獸神祭」中登場！</p>'
+        + '<h3>介紹在轉蛋中登場的期間限定角色</h3><p><img></p>'
+        + '<p><span style="color: rgb(255, 204, 0);">光屬性 ★6 <span>飛舞於球場之音樂的大天使 聖德芬</span></span><br>（獸神化・改）</p>'
+        + '<p class="note">「飛舞於球場之音樂的大天使 聖德芬」和「覺醒之音樂的大天使 聖德芬」的數值相同。</p>'
+        + '<p>闇屬性 ★6 瞄準球門之契約的大天使 梅塔特隆<br>（獸神化・改）</p>'
+        + '<h3>期間限定冒險出現</h3><p>光屬性 ★6 冒險的角色<br>（進化）</p>';
+    const data = X.extractPoolData(html);
+    assert.deepEqual(data.limited[0].names, ['阿露卡', '伊呂波', '飛舞於球場之音樂的大天使 聖德芬', '瞄準球門之契約的大天使 梅塔特隆']);
+    assert.deepEqual(data.limited[0].specials, ['飛舞於球場之音樂的大天使 聖德芬', '瞄準球門之契約的大天使 梅塔特隆']);
+    assert.equal(data.elementOf['瞄準球門之契約的大天使 梅塔特隆'], '闇');
+    // 沒有限定角色表的公告不讀這個段落
+    assert.deepEqual(X.extractPoolData(html.slice(html.indexOf('<p>'))).limited.flatMap((l) => l.names).includes('飛舞於球場之音樂的大天使 聖德芬'), false);
+});
