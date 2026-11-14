@@ -595,6 +595,8 @@ document.addEventListener('DOMContentLoaded', () => {
             e.preventDefault();
             error.textContent = '';
             const character = read();
+            const clash = Roster.nameClash(roster.data, c.id, character);
+            if (clash) { error.replaceChildren(renderClash(c, clash, error)); return; }
             const op = c.id ? { type: 'save', id: c.id, character } : { type: 'add', character, original: c.name };
             saveRosterOp(op, character.name.trim(), error);
         });
@@ -625,6 +627,28 @@ document.addEventListener('DOMContentLoaded', () => {
         form.appendChild(labeled('這隻其實是另一隻角色', mergeRow, '合併後不能直接復原'));
         form.appendChild(error);
         return form;
+    }
+
+    // 儲存時撞名：名稱已經是別隻角色的名稱 → 說是哪一隻，是同一隻的話直接在這裡合併
+    function renderClash(c, clash, error) {
+        const other = clash.other;
+        const box = el('div', 'roster-clash');
+        const label = (x) => x.id ? `${x.id}「${x.name}」` : `「${x.name}」`;
+        box.appendChild(el('div', '', `存不了：「${clash.name}」已經是 ${label(other)}的名稱。`));
+        box.appendChild(el('div', 'roster-clash-hint', '是同一隻角色的話，在這裡直接合併（表單裡其他還沒儲存的修改不會存）；不是的話請換一個名稱。'));
+        const as = selectOf([['alias', '當別名（另一種寫法）'], ['form', '當形態（進化後）']], 'form');
+        const row = el('div', 'roster-clash-actions');
+        const merge = (from, into) => {
+            const what = as.value === 'form' ? '形態' : '別名';
+            if (!confirm(`把${label(from)}併成${label(into)}的${what}？
+
+合併後${label(from)}不再是獨立的角色，卡池裡用到它的地方都會換成「${into.name}」。合併不能直接復原。`)) return;
+            saveRosterOp({ type: 'merge', from: from.id || undefined, fromName: from.name, into: into.id, as: as.value }, into.name, error);
+        };
+        row.append(as, smallButton(`這隻併進 ${other.id}`, 'btn-outline-danger', () => merge(c, other)));
+        if (c.id) row.appendChild(smallButton(`${other.id} 併進這隻`, 'btn-outline-danger', () => merge(other, c)));
+        box.appendChild(row);
+        return box;
     }
 
     // 出自卡池：列出這隻角色在哪些卡池，管理員可以手動補 (多半是爬蟲讀不到的 2023-09 以前的卡池)。按了就存，不用按「儲存」

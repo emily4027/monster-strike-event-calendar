@@ -140,6 +140,17 @@ test('修改檔：存檔、新增、合併、確認不同角色；套用後網�
     assert.deepEqual(e2.chars.c0004.aliases, ['一休']);
 });
 
+test('撞名：編輯中的名稱已經是別隻角色的名稱', () => {
+    const base = BASE();
+    const other = base.characters.find((c) => c.id !== 'c0003' && !c.pending);
+    const hit = R.nameClash(base, 'c0003', { name: other.name });
+    assert.equal(hit.other.id, other.id);
+    assert.equal(hit.name, other.name);
+    assert.equal(R.nameClash(base, 'c0003', { name: '沒有這個名字', aliases: [other.name] }).other.id, other.id);
+    assert.equal(R.nameClash(base, other.id, { name: other.name }), null, '自己的名稱不算撞名');
+    assert.equal(R.nameClash(base, 'c0003', { name: '沒有這個名字' }), null);
+});
+
 test('修改檔：不合理的修改會丟出錯誤', () => {
     const base = BASE();
     assert.throws(() => R.applyOp(base, null, { type: 'save', id: 'c0003', character: { name: '' } }), /空白/);

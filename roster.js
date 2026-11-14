@@ -86,6 +86,16 @@
         return indexRoster(data).byKey.get(key) || null;
     }
 
+    // 編輯中的角色 (id；新角色沒有) 用到的名稱，有沒有已經是別隻有編號的角色的名稱
+    //   → { name: 撞到的名稱, other: 那隻角色 }，沒撞名回傳 null
+    function nameClash(data, id, character) {
+        for (const n of namesOf(character || {})) {
+            const other = findCharacter(data, n);
+            if (other && other.id && !other.pending && other.id !== id) return { name: n, other };
+        }
+        return null;
+    }
+
     function nextId(data) {
         const max = listOf(data).reduce((m, c) => Math.max(m, ID_RE.test(c.id) ? Number(c.id.slice(1)) : 0), 0);
         return 'c' + String(max + 1).padStart(4, '0');
@@ -532,7 +542,7 @@
         ID_RE, KINDS, FORMS, NOTE, namesOf, indexRoster, findCharacter, nextId, addCharacter,
         poolsToNames, poolsToIds, rosterOverrides, rosterElements, applyElements, formatRoster,
         readEdits, mergeTarget, cleanCharacter, applyEdits, applyOp, foldEdits, pruneEdits, rosterIssues, hasDexNumbers,
-        applyPoolEdits
+        applyPoolEdits, nameClash
     };
     if (typeof module !== 'undefined' && module.exports) module.exports = api;
     else root.Roster = api;

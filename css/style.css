@@ -446,6 +446,9 @@ body.edit-mode .normal-only { display: none; }
 .roster-actions { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
 .roster-merge { display: grid; grid-template-columns: 2fr 1fr auto; gap: 6px; }
 .roster-error { color: #dc3545; font-size: 0.85rem; }
+.roster-clash-hint { color: var(--text-muted, #6c757d); margin: 2px 0 6px; }
+.roster-clash-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+.roster-clash-actions select { width: auto; }
 .roster-pool-list { list-style: none; padding: 0; margin: 0 0 6px; display: grid; gap: 4px; }
 .roster-pool-list li { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; font-size: 0.9rem; }
 .roster-pool-add { display: grid; grid-template-columns: 2fr 150px 1.5fr auto; gap: 6px; }
